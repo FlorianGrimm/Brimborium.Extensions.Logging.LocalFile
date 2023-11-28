@@ -1,0 +1,19 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <Description>Logger implementation to support local file and Azure App Services 'Diagnostics logs', 'Log stream' features.</Description>
+        <TargetFramework>net8.0</TargetFramework>
+        <GenerateDocumentationFile>false</GenerateDocumentationFile>
+        <Nullable>enable</Nullable>
+    </PropertyGroup>
+    
+    <ItemGroup>
+        <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" />
+        <PackageReference Include="Microsoft.Extensions.Configuration.Json" />
+        <PackageReference Include="Microsoft.Extensions.Logging" />
+        <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+        <PackageReference Include="Microsoft.Extensions.Logging.Configuration" />
+        <PackageReference Include="Microsoft.Extensions.ObjectPool" />
+        <PackageReference Include="System.ValueTuple" />
+    </ItemGroup>
+
+</Project>

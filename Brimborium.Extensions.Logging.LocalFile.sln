@@ -1,0 +1,39 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.2.32317.152
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Brimborium.Extensions.Logging.LocalFile", "src\Brimborium.Extensions.Logging.LocalFile.csproj", "{97939E0D-BACC-4E04-950F-0D24A5E4B9AB}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Brimborium.Extensions.Logging.LocalFile.Test", "test\Brimborium.Extensions.Logging.LocalFile.Test.csproj", "{24BD6229-94FD-44A0-BA1A-BC97B2578128}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{A13D0FB1-5963-497A-9BFD-F2A4156EF9AC}"
+	ProjectSection(SolutionItems) = preProject
+		Directory.Build.props = Directory.Build.props
+		Directory.Packages.props = Directory.Packages.props
+		global.json = global.json
+		README.md = README.md
+	EndProjectSection
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{97939E0D-BACC-4E04-950F-0D24A5E4B9AB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{97939E0D-BACC-4E04-950F-0D24A5E4B9AB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{97939E0D-BACC-4E04-950F-0D24A5E4B9AB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{97939E0D-BACC-4E04-950F-0D24A5E4B9AB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{24BD6229-94FD-44A0-BA1A-BC97B2578128}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{24BD6229-94FD-44A0-BA1A-BC97B2578128}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{24BD6229-94FD-44A0-BA1A-BC97B2578128}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{24BD6229-94FD-44A0-BA1A-BC97B2578128}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {8AC9D8E5-6171-449F-9DB1-ED374A23146C}
+	EndGlobalSection
+EndGlobal
