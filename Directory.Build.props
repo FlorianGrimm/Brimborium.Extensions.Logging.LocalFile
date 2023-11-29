@@ -1,4 +1,6 @@
 <Project>
     <PropertyGroup>
+		<Authors>Florian Grimm</Authors>
+		<Copyright>MIT</Copyright>
     </PropertyGroup>
 </Project>
