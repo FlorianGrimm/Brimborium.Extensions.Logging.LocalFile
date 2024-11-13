@@ -3,7 +3,7 @@ internal class Program {
         var builder = WebApplication.CreateBuilder(args);
 
         // Add services to the container.
-        builder.Logging.AddConsole();
+        builder.Logging.AddLocalFile();
 
         builder.Services.AddControllers();
 

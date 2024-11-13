@@ -15,14 +15,16 @@
     <PackageVersion Include="Microsoft.Extensions.FileProviders.Abstractions" Version="8.0.0" />
     <PackageVersion Include="Microsoft.Extensions.FileProviders.Physical" Version="8.0.0" />
     <PackageVersion Include="Microsoft.Extensions.FileSystemGlobbing" Version="8.0.0" />
-    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.0" />
-    <PackageVersion Include="Microsoft.Extensions.Logging.Configuration" Version="8.0.0" />
-    <PackageVersion Include="Microsoft.Extensions.Logging" Version="8.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.2" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Configuration" Version="8.0.1" />
+    <PackageVersion Include="Microsoft.Extensions.Logging" Version="8.0.1" />
     <PackageVersion Include="Microsoft.Extensions.ObjectPool" Version="8.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="8.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Options" Version="8.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Primitives" Version="8.0.0" />
     <PackageVersion Include="Moq" Version="4.20.70" />
+    <PackageVersion Include="System.Text.Json" Version="8.0.5" />
     <PackageVersion Include="System.ValueTuple" Version="4.5.0" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
     <PackageVersion Include="xunit" Version="2.6.2" />

@@ -5,20 +5,29 @@ using Brimborium.Extensions.Logging.LocalFile;
 
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Configuration;
 using Microsoft.Extensions.ObjectPool;
 using Microsoft.Extensions.Options;
 
+using System;
 using System.Buffers;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace Microsoft.Extensions.Logging {
-    public static class LocalFileLoggerFactoryExtensions {
+    public static class LocalFileLoggerExtensions {
         public static ILoggingBuilder AddLocalFileLogger(
             this ILoggingBuilder builder,
             IConfiguration configuration
@@ -197,13 +206,13 @@ namespace Brimborium.Extensions.Logging.LocalFile {
                 //if (string.IsNullOrEmpty(logDirectory)) {
                 //    logDirectory = Path.Combine(_HostEnvironment.ContentRootPath ?? ".", "LogFiles");
                 //}
-                if (string.IsNullOrEmpty(logDirectory)) {
+                if (logDirectory is { Length: > 0 }) {
                     logDirectory = System.Environment.GetEnvironmentVariable("TEMP");
                 }
-                if ((logDirectory ?? string.Empty).Contains("%")) {
+                if (logDirectory is { Length: > 0 } && logDirectory.Contains("%")) {
                     logDirectory = System.Environment.ExpandEnvironmentVariables(logDirectory);
                 }
-                if (!System.IO.Path.IsPathRooted(logDirectory)) {
+                if (logDirectory is { Length: > 0 } && !System.IO.Path.IsPathRooted(logDirectory)) {
                     logDirectory = System.IO.Path.GetFullPath(logDirectory);
                 }
                 options.LogDirectory = logDirectory;
@@ -752,7 +761,7 @@ namespace Brimborium.Extensions.Logging.LocalFile {
                     writer.WriteNumber(key, sbyteValue);
                     break;
                 case char charValue:
-#if NETCOREAPP
+#if NET8_0_OR_GREATER
                     writer.WriteString(key, MemoryMarshal.CreateSpan(ref charValue, 1));
 #else
                     writer.WriteString(key, charValue.ToString());
@@ -946,14 +955,12 @@ namespace Brimborium.Extensions.Logging.LocalFile {
             return _rentedBuffer.AsSpan(_index);
         }
 
-#if NETCOREAPP
-        internal ValueTask WriteToStreamAsync(Stream destination, CancellationToken cancellationToken)
-        {
+#if NET8_0_OR_GREATER
+        internal ValueTask WriteToStreamAsync(Stream destination, CancellationToken cancellationToken) {
             return destination.WriteAsync(WrittenMemory, cancellationToken);
         }
 
-        internal void WriteToStream(Stream destination)
-        {
+        internal void WriteToStream(Stream destination) {
             destination.Write(WrittenMemory.Span);
         }
 #else

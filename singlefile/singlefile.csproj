@@ -29,7 +29,6 @@
         <PackageReference Include="Microsoft.Extensions.Logging.Configuration" />
         <PackageReference Include="Microsoft.Extensions.ObjectPool" />
         <PackageReference Include="System.ValueTuple" />
-        <PackageReference Include="System.Text.Json" />
     </ItemGroup>
 
 </Project>
