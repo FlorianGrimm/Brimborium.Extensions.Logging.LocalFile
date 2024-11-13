@@ -4,12 +4,10 @@
 namespace Brimborium.Extensions.Logging.LocalFile;
 
 public class LocalFileLoggerConfigureOptions : BatchLoggerConfigureOptions, IConfigureOptions<LocalFileLoggerOptions> {
-    private readonly IWebAppContext _Context;
-
-    public LocalFileLoggerConfigureOptions(IConfiguration configuration, IWebAppContext context, bool alwaysEnabled = false)
+    public LocalFileLoggerConfigureOptions(IConfiguration configuration, bool alwaysEnabled = false)
         : base(configuration, "LocalFileEnabled", alwaysEnabled) {
-        this._Context = context;
     }
+
     protected string? GetCfgValue(string key) {
         if (this._Configuration is IConfigurationRoot) {
             return this._Configuration.GetSection("LocalFile" + key)?.Value;
@@ -45,7 +43,7 @@ public class LocalFileLoggerConfigureOptions : BatchLoggerConfigureOptions, ICon
             }
         }
         if (string.IsNullOrEmpty(options.LogDirectory)) {
-            options.LogDirectory = Path.Combine(this._Context.HomeFolder ?? ".", "LogFiles", "Application");
+            options.LogDirectory = "LogFiles/Application";
         }
         if (!System.IO.Path.IsPathRooted(options.LogDirectory)) {
             options.LogDirectory = System.IO.Path.GetFullPath(options.LogDirectory);
