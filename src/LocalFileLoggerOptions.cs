@@ -1,7 +1,4 @@
-﻿// Licensed to the .NET Foundation under one or more agreements.
-// The .NET Foundation licenses this file to you under the MIT license.
-
-namespace Brimborium.Extensions.Logging.LocalFile {
+﻿namespace Brimborium.Extensions.Logging.LocalFile {
     using global::System;
     using global::System.Text.Json;
 
@@ -19,7 +16,7 @@ namespace Brimborium.Extensions.Logging.LocalFile {
         /// <summary>
         /// Gets or sets a strictly positive value representing the maximum log size in bytes or null for no limit.
         /// Once the log is full, no more messages will be appended.
-        /// Defaults to <c>10MB</c>.
+        /// Defaults is no limit.
         /// </summary>
         public int? FileSizeLimit {
             get => this._fileSizeLimit;
@@ -51,10 +48,16 @@ namespace Brimborium.Extensions.Logging.LocalFile {
                     : throw new ArgumentNullException(nameof(value));
         }
 
+        /// <summary>
+        /// Gets or sets the base directory where log files will be stored.
+        /// </summary>
         public string? BaseDirectory { get; set; }
 
+        /// <summary>
+        /// Gets or sets the directory where log files will be stored.
+        /// Defaults to <c>LogFiles/Application</c>.
+        /// </summary>
         public string? LogDirectory { get; set; } = "LogFiles/Application";
-
 
         /// <summary>
         /// Gets or sets the period after which logs will be flushed to the store.
@@ -63,7 +66,7 @@ namespace Brimborium.Extensions.Logging.LocalFile {
             get => this._flushPeriod;
             set => this._flushPeriod = (value > TimeSpan.Zero)
                 ? value
-                : throw new ArgumentOutOfRangeException(nameof(value), $"{nameof(this.FlushPeriod)} must be positive.");
+                : TimeSpan.FromMilliseconds(500);
         }
 
         /// <summary>
@@ -78,8 +81,8 @@ namespace Brimborium.Extensions.Logging.LocalFile {
 
         /// <summary>
         /// Gets or sets a maximum number of events to include in a single batch or null for no limit.
-        /// </summary>
         /// Defaults to <c>null</c>.
+        /// </summary>
         public int? BatchSize {
             get => this._batchSize;
             set => this._batchSize = !value.HasValue || value.Value < 0 ? null : value;
@@ -107,12 +110,24 @@ namespace Brimborium.Extensions.Logging.LocalFile {
         /// </summary>
         public bool UseUtcTimestamp { get; set; }
 
+        /// <summary>
+        /// Gets or sets a value indicating whether event IDs should be included in the log messages.
+        /// </summary>
         public bool IncludeEventId { get; set; }
 
+        /// <summary>
+        /// Gets or sets a value indicating whether the log messages should be formatted as JSON.
+        /// </summary>
         public bool UseJSONFormat { get; set; }
 
         /// <summary>
-        /// Gets or sets JsonWriterOptions.
+        /// Gets or sets a string that will replace new line characters in log messages.
+        /// Defaults to <c>"; "</c>.
+        /// </summary>
+        public string? NewLineReplacement { get; set; } = "; ";
+
+        /// <summary>
+        /// Gets or sets the options for the JSON writer.
         /// </summary>
         public JsonWriterOptions JsonWriterOptions { get; set; }
     }

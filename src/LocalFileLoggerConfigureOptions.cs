@@ -1,18 +1,22 @@
-﻿// Licensed to the .NET Foundation under one or more agreements.
-// The .NET Foundation licenses this file to you under the MIT license.
-
-namespace Brimborium.Extensions.Logging.LocalFile {
+﻿namespace Brimborium.Extensions.Logging.LocalFile {
     using global::Microsoft.Extensions.Configuration;
     using global::Microsoft.Extensions.Options;
     using global::System;
 
     internal sealed class LocalFileLoggerConfigureOptions : IConfigureOptions<LocalFileLoggerOptions> {
         private readonly IConfiguration _configuration;
-        // private readonly IHostEnvironment _HostEnvironment;
-
+        /*
+#if LocalFileIHostApplicationLifetime
+        private readonly Microsoft.Extensions.Hosting.IHostEnvironment _HostEnvironment;
+#endif
+        */
         public LocalFileLoggerConfigureOptions(
+            /*
+#if LocalFileIHostApplicationLifetime
+            Microsoft.Extensions.Hosting.IHostEnvironment hostEnvironment,
+#endif
+            */
             IConfiguration configuration
-            //, IHostEnvironment hostEnvironment
             ) {
 
             this._configuration = configuration;

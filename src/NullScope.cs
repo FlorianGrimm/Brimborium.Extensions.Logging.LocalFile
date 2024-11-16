@@ -1,16 +1,9 @@
-﻿using System;
+﻿namespace Brimborium.Extensions.Logging.LocalFile {
+    internal sealed class NullScope : System.IDisposable {
+        internal static NullScope Instance { get; } = new NullScope();
 
-namespace Brimborium.Extensions.Logging.LocalFile;
-/// <summary>
-/// An empty scope without any logic
-/// </summary>
-internal sealed class NullScope : IDisposable {
-    public static NullScope Instance { get; } = new NullScope();
+        private NullScope() {}
 
-    private NullScope() {
-    }
-
-    /// <inheritdoc />
-    public void Dispose() {
+        public void Dispose() {}
     }
 }

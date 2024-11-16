@@ -1,8 +1,4 @@
-﻿// Licensed to the .NET Foundation under one or more agreements.
-// The .NET Foundation licenses this file to you under the MIT license.
-
-
-namespace System.Text.Json {
+﻿namespace System.Text.Json {
     using global::System;
     using global::System.Buffers;
     using global::System.Diagnostics;
@@ -104,9 +100,7 @@ namespace System.Text.Json {
 
         // Returns the rented buffer back to the pool
         public void Dispose() {
-            if (this._rentedBuffer == null) {
-                return;
-            }
+            if (this._rentedBuffer == null) { return; }
 
             this.ClearHelper();
             var toReturn = this._rentedBuffer;
@@ -127,7 +121,7 @@ namespace System.Text.Json {
         public void Advance(int count) {
             Debug.Assert(this._rentedBuffer != null);
             Debug.Assert(count >= 0);
-            Debug.Assert((this._rentedBuffer != null) &&(this._index <= this._rentedBuffer.Length - count));
+            Debug.Assert((this._rentedBuffer != null) && (this._index <= this._rentedBuffer.Length - count));
 
             this._index += count;
         }
@@ -163,15 +157,16 @@ namespace System.Text.Json {
 #endif
 
         private void CheckAndResizeBuffer(int sizeHint) {
-            if (this._rentedBuffer is null) {
-                this._rentedBuffer = new byte[sizeHint];
-            }
-            //Debug.Assert(_rentedBuffer != null);
             Debug.Assert(sizeHint >= 0);
 
             if (sizeHint == 0) {
                 sizeHint = MinimumBufferSize;
             }
+
+            if (this._rentedBuffer is null) {
+                this._rentedBuffer = new byte[sizeHint];
+            }
+            //Debug.Assert(_rentedBuffer != null);
 
             var availableSpace = this._rentedBuffer.Length - this._index;
 

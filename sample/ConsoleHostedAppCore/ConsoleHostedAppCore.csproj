@@ -8,6 +8,10 @@
         <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
     </PropertyGroup>
 
+    <PropertyGroup>
+      <DefineConstants>$(DefineConstants);LocalFileIHostApplicationLifetime</DefineConstants>
+    </PropertyGroup>
+
     <ItemGroup>
         <Compile Include="..\..\src\*.cs" Link="Brimborium.Extensions.Logging.LocalFile\%(FileName).cs" />
     </ItemGroup>

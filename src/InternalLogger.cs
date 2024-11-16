@@ -24,7 +24,12 @@
                 } catch {
                 }
             } else {
-                System.Console.Error.WriteLine(error.ToString());
+                if (error is System.AggregateException aggregateException) {
+                    aggregateException.Handle(static (error) => true);
+                    System.Console.Error.WriteLine(aggregateException.ToString());
+                } else {
+                    System.Console.Error.WriteLine(error.ToString());
+                }
             }
         }
 

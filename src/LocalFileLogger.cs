@@ -1,6 +1,3 @@
-// Licensed to the .NET Foundation under one or more agreements.
-// The .NET Foundation licenses this file to you under the MIT license.
-
 #pragma warning disable IDE0079 // Remove unnecessary suppression
 
 namespace Brimborium.Extensions.Logging.LocalFile {
@@ -16,6 +13,9 @@ namespace Brimborium.Extensions.Logging.LocalFile {
     using global::System.Text;
     using global::System.Text.Json;
 
+    /// <summary>
+    /// 
+    /// </summary>
     [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
     internal sealed class LocalFileLogger : ILogger {
         private static readonly byte[] _crlf = new byte[] { 13, 10 };
@@ -31,9 +31,12 @@ namespace Brimborium.Extensions.Logging.LocalFile {
 
         public IDisposable BeginScope<TState>(TState state)
             where TState : notnull
-            => this._provider.ScopeProvider?.Push(state) ?? NullScope.Instance;
+            => this._provider.ScopeProvider?.Push(state)
+            ?? NullScope.Instance;
 
-        public bool IsEnabled(LogLevel logLevel) => (this._provider.IsEnabled) && (logLevel != LogLevel.None);
+        public bool IsEnabled(LogLevel logLevel)
+            => (this._provider.IsEnabled)
+            && (logLevel != LogLevel.None);
 
         public void Log<TState>(
             LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter
@@ -47,110 +50,118 @@ namespace Brimborium.Extensions.Logging.LocalFile {
             }
 
             if (this._provider.UseJSONFormat) {
-                var message = "";
-                if (exception is not null) {
-                    message = formatter(state, exception);
-                }
-                var DefaultBufferSize = 1024 + message.Length;
-                using (var output = new PooledByteBufferWriter(DefaultBufferSize)) {
-                    using (var writer = new Utf8JsonWriter(output, this._provider.JsonWriterOptions)) {
-                        writer.WriteStartObject();
-                        var timestampFormat = this._provider.TimestampFormat ?? "u"; //"yyyy-MM-dd HH:mm:ss.fff zzz";
-                        writer.WriteString("Timestamp", timestamp.ToString(timestampFormat));
-                
-                        writer.WriteNumber("EventId", eventId.Id);
-                        writer.WriteString("LogLevel", GetLogLevelString(logLevel));
-                        writer.WriteString("Category", this._category);
-                        if (!string.IsNullOrEmpty(message)) {
-                            writer.WriteString("Message", message);
-                        }
+                this.LogJSON(timestamp, logLevel, eventId, state, exception, formatter);
+            } else {
+                this.LogPlainText(timestamp, logLevel, eventId, state, exception, formatter);
+            }
+        }
 
-                        if (exception != null) {
-                            var exceptionMessage = exception.ToString();
-                            if (!this._provider.JsonWriterOptions.Indented) {
-                                exceptionMessage = exceptionMessage.Replace(Environment.NewLine, " ");
-                            }
-                            writer.WriteString(nameof(Exception), exceptionMessage);
-                        }
+        private void LogJSON<TState>(DateTimeOffset timestamp, LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) {
+            var message = "";
+            if (exception is not null) {
+                message = formatter(state, exception);
+            }
+            var DefaultBufferSize = 1024 + message.Length;
+            using (var output = new PooledByteBufferWriter(DefaultBufferSize)) {
+                using (var writer = new Utf8JsonWriter(output, this._provider.JsonWriterOptions)) {
+                    writer.WriteStartObject();
+                    var timestampFormat = this._provider.TimestampFormat ?? "u"; //"yyyy-MM-dd HH:mm:ss.fff zzz";
+                    writer.WriteString("Timestamp", timestamp.ToString(timestampFormat));
 
-                        if (state != null) {
-                            writer.WriteStartObject(nameof(state));
-                            // writer.WriteString("Message", state.ToString());
-                            if (state is IReadOnlyCollection<KeyValuePair<string, object>> stateProperties) {
-                                foreach (var item in stateProperties) {
-                                    if (item.Key == "{OriginalFormat}") {
-                                        WriteItem(writer, item);
-                                        break;
-                                    } else {
-                                    }
-                                }
-                                foreach (var item in stateProperties) {
-                                    if (item.Key == "{OriginalFormat}") {
-                                        //
-                                    } else {
-                                        WriteItem(writer, item);
-                                    }
-                                }
-                            }
-                            writer.WriteEndObject();
-                        }
-                        this.WriteScopeInformation(writer, this._provider.ScopeProvider);
-                        writer.WriteEndObject();
-                        writer.Flush();
-                        
-                        output.Write(new ReadOnlySpan<byte>(_crlf));
+                    writer.WriteNumber("EventId", eventId.Id);
+                    writer.WriteString("LogLevel", GetLogLevelString(logLevel));
+                    writer.WriteString("Category", this._category);
+                    if (!string.IsNullOrEmpty(message)) {
+                        writer.WriteString("Message", message);
                     }
+
+                    if (exception != null) {
+                        var exceptionMessage = exception.ToString();
+                        if (!this._provider.JsonWriterOptions.Indented) {
+                            exceptionMessage = exceptionMessage.Replace(Environment.NewLine, " ");
+                        }
+                        writer.WriteString(nameof(Exception), exceptionMessage);
+                    }
+
+                    if (state != null) {
+                        writer.WriteStartObject(nameof(state));
+                        // writer.WriteString("Message", state.ToString());
+                        if (state is IReadOnlyCollection<KeyValuePair<string, object>> stateProperties) {
+                            foreach (var item in stateProperties) {
+                                if (item.Key == "{OriginalFormat}") {
+                                    WriteItem(writer, item);
+                                    break;
+                                } else {
+                                }
+                            }
+                            foreach (var item in stateProperties) {
+                                if (item.Key == "{OriginalFormat}") {
+                                    //
+                                } else {
+                                    WriteItem(writer, item);
+                                }
+                            }
+                        }
+                        writer.WriteEndObject();
+                    }
+                    this.WriteScopeInformation(writer, this._provider.ScopeProvider);
+                    writer.WriteEndObject();
+                    writer.Flush();
+
+                    output.Write(new ReadOnlySpan<byte>(_crlf));
+                }
 #if NET8_0_OR_GREATER
-                    message = Encoding.UTF8.GetString(output.WrittenMemory.Span);
+                message = Encoding.UTF8.GetString(output.WrittenMemory.Span);
 #else
                     message = Encoding.UTF8.GetString(output.WrittenMemory.ToArray());
 #endif
-                }
-                this._provider.AddMessage(timestamp, message);
-            } else {
-
-                var builder = _stringBuilderPool.Get();
-                var timestampFormat = this._provider.TimestampFormat ?? "yyyy-MM-dd HH:mm:ss.fff zzz";
-                builder.Append(timestamp.ToString(timestampFormat /*"yyyy-MM-dd HH:mm:ss.fff zzz"*/, CultureInfo.InvariantCulture));
-                builder.Append(" [");
-                //builder.Append(logLevel.ToString());
-                builder.Append(GetLogLevelString(logLevel));
-                builder.Append("] ");
-                builder.Append(this._category);
-
-                var scopeProvider = this._provider.ScopeProvider;
-                if (scopeProvider != null) {
-                    scopeProvider.ForEachScope((scope, stringBuilder) => {
-                        stringBuilder.Append(" => ").Append(scope);
-                    }, builder);
-
-                    //builder.AppendLine(":");
-                    builder.Append(":");
-                } else {
-                    builder.Append(": ");
-                }
-
-                if (this._provider.IncludeEventId) {
-                    builder.Append(eventId.Id.ToString("d6"));
-                    builder.Append(": ");
-                }
-                var message = formatter(state, exception);
-                builder.Append(message);
-                //.Replace(Environment.NewLine, "; ").Replace("\r", "; ").Replace("\n", "; ")
-                if (exception != null) {
-                    //builder.AppendLine(exception.ToString()).Replace(Environment.NewLine, "; ");
-                    builder.Append(exception.ToString());
-                }
-
-                builder.Replace(Environment.NewLine, "; ");
-                builder.Replace("\r", "; ");
-                builder.Replace("\n", "; ");
-                builder.AppendLine();
-                this._provider.AddMessage(timestamp, builder.ToString());
-
-                builder.Clear();
-                _stringBuilderPool.Return(builder);
             }
+            this._provider.AddMessage(timestamp, message);
+        }
+
+        private void LogPlainText<TState>(DateTimeOffset timestamp, LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) {
+            var builder = _stringBuilderPool.Get();
+            var timestampFormat = this._provider.TimestampFormat ?? "yyyy-MM-dd HH:mm:ss.fff zzz";
+            _ = builder.Append(timestamp.ToString(timestampFormat /*"yyyy-MM-dd HH:mm:ss.fff zzz"*/, CultureInfo.InvariantCulture));
+
+            _ = builder.Append(" [");
+            _ = builder.Append(GetLogLevelString(logLevel));
+            _ = builder.Append("] ");
+            _ = builder.Append(this._category);
+
+            var scopeProvider = this._provider.ScopeProvider;
+            if (scopeProvider != null) {
+                scopeProvider.ForEachScope(static (scope, stringBuilder) => {
+                    _ = stringBuilder.Append(" => ").Append(scope);
+                }, builder);
+
+                _ = builder.Append(": ");
+            } else {
+                _ = builder.Append(": ");
+            }
+
+            if (this._provider.IncludeEventId) {
+                _ = builder.Append(eventId.Id.ToString("d6"));
+                _ = builder.Append(": ");
+            }
+            var message = formatter(state, exception);
+            _ = builder.Append(message);
+
+            if (exception != null) {
+                _ = builder.Append(exception.ToString());
+            }
+            if (this._provider.NewLineReplacement is { } newLineReplacement) {
+                _=builder
+                    .Replace("\r\n", newLineReplacement)
+                    .Replace("\r", newLineReplacement)
+                    .Replace("\n", newLineReplacement);
+            }
+            _ = builder.AppendLine();
+
+            this._provider.AddMessage(timestamp, builder.ToString());
+
+            _ = builder.Clear();
+            _stringBuilderPool.Return(builder);
         }
 
         private static string GetLogLevelString(LogLevel logLevel) {
