@@ -10,9 +10,10 @@ using global::System.Threading;
 internal class Program {
     private static async Task Main(string[] args) {
         var builder = new HostApplicationBuilder(args);
-        builder.Logging.AddConfiguration(builder.Configuration.GetSection("Logging"));
         builder.Logging.AddLocalFile(
             configure: (options) => {
+                // options.BaseDirectory = System.AppContext.BaseDirectory;
+                // options.BaseDirectory = System.Environment.GetEnvironmentVariable("TEMP");
                 options.BaseDirectory = GetFolderPath();
                 options.LogDirectory = "LogFiles";
             });

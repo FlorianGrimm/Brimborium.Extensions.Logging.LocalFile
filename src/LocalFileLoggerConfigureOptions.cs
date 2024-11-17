@@ -60,13 +60,25 @@
 
 
                 var baseDirectory = configurationSection.GetSection("BaseDirectory")?.Value ?? options.BaseDirectory;
-                if (baseDirectory is { Length: > 0 } && baseDirectory.Contains('%')) {
+                if (baseDirectory is { Length: > 0 }
+#if NET8_0_OR_GREATER
+                    && baseDirectory.Contains('%')
+#else
+                    && baseDirectory.Contains("%")
+#endif
+                    ) {
                     baseDirectory = System.Environment.ExpandEnvironmentVariables(baseDirectory);
                     options.BaseDirectory = baseDirectory;
                 }
 
                 var logDirectory = configurationSection.GetSection("Directory")?.Value ?? options.LogDirectory;
-                if (logDirectory is { Length: > 0 } && logDirectory.Contains('%')) {
+                if (logDirectory is { Length: > 0 }
+#if NET8_0_OR_GREATER
+                    && logDirectory.Contains('%')
+#else
+                    && logDirectory.Contains("%")
+#endif
+                    ) {
                     logDirectory = System.Environment.ExpandEnvironmentVariables(logDirectory);
                     options.LogDirectory = logDirectory;
                 }

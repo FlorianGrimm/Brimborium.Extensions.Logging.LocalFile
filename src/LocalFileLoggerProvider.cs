@@ -76,7 +76,7 @@ namespace Brimborium.Extensions.Logging.LocalFile {
                         path = logDirectory;
                     }
                     if (path is { Length: > 0 }
-                        && System.IO.Path.IsPathFullyQualified(path)) {
+                        && System.IO.Path.IsPathRooted(path)) {
                         this._path = path;
                         this._isPathValid = true;
                     }

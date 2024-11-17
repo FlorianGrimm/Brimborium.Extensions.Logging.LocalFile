@@ -1,80 +1,93 @@
-#nullable enable
-#pragma warning disable IDE0009 // Member access should be qualified.
-
-using Brimborium.Extensions.Logging.LocalFile;
-
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Configuration;
-using Microsoft.Extensions.ObjectPool;
-using Microsoft.Extensions.Options;
-
-using System;
-using System.Buffers;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
-using System.Globalization;
-using System.IO;
-using System.Linq;
-using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
-using System.Text;
-using System.Text.Json;
-using System.Threading;
-using System.Threading.Tasks;
-
+// Enable
+// #define LocalFileIHostApplicationLifetime
+// if you using Microsoft.Extensions.Hosting
 namespace Microsoft.Extensions.Logging {
+    using Brimborium.Extensions.Logging.LocalFile;
+
+    using Microsoft.Extensions.Configuration;
+    using Microsoft.Extensions.DependencyInjection;
+    using Microsoft.Extensions.Logging.Configuration;
+    using Microsoft.Extensions.Options;
+
+    using System;
+
+    /// <summary>
+    /// Extension methods for adding Azure diagnostics logger.
+    /// </summary>
     public static class LocalFileLoggerExtensions {
-        public static ILoggingBuilder AddLocalFileLogger(
+        public static ILoggingBuilder AddLocalFile(
             this ILoggingBuilder builder,
-            IConfiguration configuration
-            //IHostEnvironment hostEnvironment
+            IConfiguration? configuration = null,
+            Action<LocalFileLoggerOptions>? configure = null
             ) {
-            builder.Services.AddSingleton<LocalFileLoggerProvider>();
-            builder.Services
-                .AddSingleton<IConfigureOptions<LocalFileLoggerOptions>>(
-                    new LocalFileLoggerConfigureOptions(
-                        configuration: configuration.GetSection("Logging:LocalFile")
-                        //hostEnvironment: hostEnvironment
-                        ))
-                .AddSingleton<IOptionsChangeTokenSource<LocalFileLoggerOptions>>(
-                    implementationInstance: new ConfigurationChangeTokenSource<LocalFileLoggerOptions>(configuration))
-                //.TryAddEnumerable(ServiceDescriptor.Singleton<ILoggerProvider, LocalFileLoggerProvider>())
-                .AddSingleton<ILoggerProvider>((sp) => sp.GetRequiredService<LocalFileLoggerProvider>());
-            ;
+
+            var services = builder.Services;
+            var optionsBuilder = services.AddOptions<LocalFileLoggerOptions>();
+            services.Add(ServiceDescriptor.Singleton<LocalFileLoggerProvider, LocalFileLoggerProvider>());
+            services.Add(ServiceDescriptor.Singleton<ILoggerProvider>(
+                static (IServiceProvider services) => {
+                    return services.GetRequiredService<LocalFileLoggerProvider>();
+                }));
+
+            if (configuration is { }) {
+                services.Add(ServiceDescriptor.Singleton<IConfigureOptions<LocalFileLoggerOptions>>(new LocalFileLoggerConfigureOptions(configuration)));
+            } else {
+                services.Add(ServiceDescriptor.Singleton<IConfigureOptions<LocalFileLoggerOptions>, LocalFileLoggerConfigureOptions>());
+            }
+            if (configure is { }) {
+                optionsBuilder.Configure(configure);
+            }
+
             LoggerProviderOptions.RegisterProviderOptions<LocalFileLoggerOptions, LocalFileLoggerProvider>(builder.Services);
 
             return builder;
+        }
+
+        /// <summary>
+        /// Ensures the logs are written to disk.
+        /// </summary>
+        /// <param name="serviceProvider">Any serviceProvider</param>
+        /// <remarks>
+        /// Needed if you don't use IHostApplicationLifetime
+        /// </remarks>
+        public static bool FlushLocalFile(
+            this IServiceProvider serviceProvider
+            ) {
+            if (serviceProvider.GetService<LocalFileLoggerProvider>() is { } localFileLoggerProvider) {
+                localFileLoggerProvider.Flush();
+                return true;
+            } else {
+                return false;
+            }
         }
     }
 }
 
 namespace Brimborium.Extensions.Logging.LocalFile {
+    using global::System;
+    using global::System.Text.Json;
 
     /// <summary>
     /// Options for local file logging.
     /// </summary>
     public sealed class LocalFileLoggerOptions {
         private int? _batchSize = null;
-        private int? _backgroundQueueSize; // = 1000;
+        private int? _backgroundQueueSize = 1000;
         private TimeSpan _flushPeriod = TimeSpan.FromSeconds(1);
-        private int? _fileSizeLimit = null; // 10 * 1024 * 1024;
+        private int? _fileSizeLimit = 10 * 1024 * 1024;
         private int? _retainedFileCountLimit = 31;
         private string _fileName = "diagnostics-";
 
         /// <summary>
         /// Gets or sets a strictly positive value representing the maximum log size in bytes or null for no limit.
         /// Once the log is full, no more messages will be appended.
-        /// Defaults to <c>10MB</c>.
+        /// Defaults is 10 MB.
         /// </summary>
         public int? FileSizeLimit {
-            get => _fileSizeLimit;
-            set => _fileSizeLimit = !value.HasValue || !(value <= 0)
+            get => this._fileSizeLimit;
+            set => this._fileSizeLimit = !value.HasValue || !(value <= 0)
                     ? value
-                    : throw new ArgumentOutOfRangeException(nameof(value), $"{nameof(FileSizeLimit)} must be positive.");
+                    : throw new ArgumentOutOfRangeException(nameof(value), $"{nameof(this.FileSizeLimit)} must be positive.");
         }
 
         /// <summary>
@@ -82,10 +95,10 @@ namespace Brimborium.Extensions.Logging.LocalFile {
         /// Defaults to <c>2</c>.
         /// </summary>
         public int? RetainedFileCountLimit {
-            get => _retainedFileCountLimit;
-            set => _retainedFileCountLimit = !value.HasValue || !(value <= 0)
+            get => this._retainedFileCountLimit;
+            set => this._retainedFileCountLimit = !value.HasValue || !(value <= 0)
                     ? value
-                    : throw new ArgumentOutOfRangeException(nameof(value), $"{nameof(RetainedFileCountLimit)} must be positive.");
+                    : throw new ArgumentOutOfRangeException(nameof(value), $"{nameof(this.RetainedFileCountLimit)} must be positive.");
         }
 
         /// <summary>
@@ -94,23 +107,32 @@ namespace Brimborium.Extensions.Logging.LocalFile {
         /// Defaults to <c>diagnostics-</c>.
         /// </summary>
         public string FileName {
-            get => _fileName;
-            set => _fileName = !string.IsNullOrEmpty(value)
+            get => this._fileName;
+            set => this._fileName = !string.IsNullOrEmpty(value)
                     ? value
                     : throw new ArgumentNullException(nameof(value));
         }
 
-        public string? LogDirectory { get; set; }
+        /// <summary>
+        /// Gets or sets the base directory where log files will be stored.
+        /// Needed to enable the logging - if LogDirectory is relative
+        /// </summary>
+        public string? BaseDirectory { get; set; }
 
+        /// <summary>
+        /// Gets or sets the directory where log files will be stored.
+        /// Needed to enable the logging - if LogDirectory is relative than BaseDirectory is also needed.
+        /// </summary>
+        public string? LogDirectory { get; set; }
 
         /// <summary>
         /// Gets or sets the period after which logs will be flushed to the store.
         /// </summary>
         public TimeSpan FlushPeriod {
-            get => _flushPeriod;
-            set => _flushPeriod = (value > TimeSpan.Zero)
+            get => this._flushPeriod;
+            set => this._flushPeriod = (value > TimeSpan.Zero)
                 ? value
-                : throw new ArgumentOutOfRangeException(nameof(value), $"{nameof(FlushPeriod)} must be positive.");
+                : TimeSpan.FromMilliseconds(500);
         }
 
         /// <summary>
@@ -119,23 +141,23 @@ namespace Brimborium.Extensions.Logging.LocalFile {
         /// Defaults to <c>1000</c>.
         /// </summary>
         public int? BackgroundQueueSize {
-            get => _backgroundQueueSize;
-            set => _backgroundQueueSize = !value.HasValue || value.Value < 0 ? null : value;
+            get => this._backgroundQueueSize;
+            set => this._backgroundQueueSize = !value.HasValue || value.Value < 0 ? null : value;
         }
 
         /// <summary>
         /// Gets or sets a maximum number of events to include in a single batch or null for no limit.
+        /// Defaults to 1000.
         /// </summary>
-        /// Defaults to <c>null</c>.
         public int? BatchSize {
-            get => _batchSize;
-            set => _batchSize = !value.HasValue || value.Value < 0 ? null : value;
+            get => this._batchSize;
+            set => this._batchSize = !value.HasValue || value.Value < 0 ? null : value;
         }
 
         /// <summary>
         /// Gets or sets value indicating if logger accepts and queues writes.
         /// </summary>
-        public bool IsEnabled { get; set; } = false;
+        public bool IsEnabled { get; set; } = true;
 
         /// <summary>
         /// Gets or sets a value indicating whether scopes should be included in the message.
@@ -154,70 +176,112 @@ namespace Brimborium.Extensions.Logging.LocalFile {
         /// </summary>
         public bool UseUtcTimestamp { get; set; }
 
+        /// <summary>
+        /// Gets or sets a value indicating whether event IDs should be included in the log messages.
+        /// </summary>
         public bool IncludeEventId { get; set; }
 
+        /// <summary>
+        /// Gets or sets a value indicating whether the log messages should be formatted as JSON.
+        /// </summary>
         public bool UseJSONFormat { get; set; }
 
         /// <summary>
-        /// Gets or sets JsonWriterOptions.
+        /// Gets or sets a string that will replace new line characters in log messages.
+        /// Defaults to <c>"; "</c>.
+        /// </summary>
+        public string? NewLineReplacement { get; set; } = "; ";
+
+        /// <summary>
+        /// Gets or sets the options for the JSON writer.
         /// </summary>
         public JsonWriterOptions JsonWriterOptions { get; set; }
     }
+}
 
+namespace Brimborium.Extensions.Logging.LocalFile {
+    using global::Microsoft.Extensions.Configuration;
+    using global::Microsoft.Extensions.Options;
+    using global::System;
 
     internal sealed class LocalFileLoggerConfigureOptions : IConfigureOptions<LocalFileLoggerOptions> {
-        private readonly IConfigurationSection _configuration;
-        // private readonly IHostEnvironment _HostEnvironment;
-
+        private readonly IConfiguration _configuration;
+        /*
+#if LocalFileIHostApplicationLifetime
+        private readonly Microsoft.Extensions.Hosting.IHostEnvironment _HostEnvironment;
+#endif
+        */
         public LocalFileLoggerConfigureOptions(
-            IConfigurationSection configuration
-            //, IHostEnvironment hostEnvironment
+            /*
+#if LocalFileIHostApplicationLifetime
+            Microsoft.Extensions.Hosting.IHostEnvironment hostEnvironment,
+#endif
+            */
+            IConfiguration configuration
             ) {
-            _configuration = configuration;
+
+            this._configuration = configuration;
+
             //_HostEnvironment = hostEnvironment;
         }
 
         public void Configure(LocalFileLoggerOptions options) {
-            if (_configuration.Exists()) {
-                options.IsEnabled = TextToBoolean(_configuration.GetSection("IsEnabled")?.Value, true);
+            IConfigurationSection? configurationSection;
+            if (this._configuration is IConfigurationRoot configurationRoot) {
+                configurationSection = configurationRoot.GetSection("Logging:LocalFile");
+            } else if (this._configuration is IConfigurationSection section) {
+                configurationSection = section;
+            } else {
+                configurationSection = default;
+            }
+            if (configurationSection is { }
+                && configurationSection.Exists()) {
+                options.IsEnabled = TextToBoolean(configurationSection.GetSection("IsEnabled")?.Value, true);
 
                 options.FileSizeLimit = TextToInt(
-                    _configuration.GetSection("LocalFileSizeLimit")?.Value,
+                    configurationSection.GetSection("FileSizeLimit")?.Value,
                     null,
                     (value) => ((value.HasValue) ? value.Value * 1024 * 1024 : null)
                     );
                 options.RetainedFileCountLimit = TextToInt(
-                    _configuration.GetSection("LocalFileRetainedFileCountLimit")?.Value,
+                    configurationSection.GetSection("FileRetainedFileCountLimit")?.Value,
                     31,
                     (value) => ((value.HasValue) ? value.Value : 10)
                     );
                 options.FlushPeriod = TextToTimeSpan(
-                    _configuration.GetSection("LocalFileIncludeScopes")?.Value
+                    configurationSection.GetSection("FlushPeriod")?.Value
                     ).GetValueOrDefault(
                         TimeSpan.FromSeconds(1)
                     );
-                options.IncludeScopes = TextToBoolean(_configuration.GetSection("LocalFileIncludeScopes")?.Value);
-                options.TimestampFormat = _configuration.GetSection("LocalFileTimestampFormat")?.Value;
-                options.UseUtcTimestamp = TextToBoolean(_configuration.GetSection("LocalFileUseUtcTimestamp")?.Value);
-                options.IncludeEventId = TextToBoolean(_configuration.GetSection("LocalFileIncludeEventId")?.Value);
-                options.UseJSONFormat = TextToBoolean(_configuration.GetSection("LocalFileUseJSONFormat")?.Value);
+                options.IncludeScopes = TextToBoolean(configurationSection.GetSection("IncludeScopes")?.Value);
+                options.TimestampFormat = configurationSection.GetSection("TimestampFormat")?.Value;
+                options.UseUtcTimestamp = TextToBoolean(configurationSection.GetSection("UseUtcTimestamp")?.Value);
+                options.IncludeEventId = TextToBoolean(configurationSection.GetSection("IncludeEventId")?.Value);
+                options.UseJSONFormat = TextToBoolean(configurationSection.GetSection("UseJSONFormat")?.Value);
 
-                var logDirectory = _configuration.GetSection("LocalFileDirectory")?.Value;
-                //if (string.IsNullOrEmpty(logDirectory)) {
-                //    logDirectory = Path.Combine(_HostEnvironment.ContentRootPath ?? ".", "LogFiles");
-                //}
-                if (logDirectory is { Length: > 0 }) {
-                    logDirectory = System.Environment.GetEnvironmentVariable("TEMP");
+
+                var baseDirectory = configurationSection.GetSection("BaseDirectory")?.Value ?? options.BaseDirectory;
+                if (baseDirectory is { Length: > 0 } && baseDirectory.Contains('%')) {
+                    baseDirectory = System.Environment.ExpandEnvironmentVariables(baseDirectory);
+                    options.BaseDirectory = baseDirectory;
                 }
-                if (logDirectory is { Length: > 0 } && logDirectory.Contains("%")) {
+
+                var logDirectory = configurationSection.GetSection("Directory")?.Value ?? options.LogDirectory;
+                if (logDirectory is { Length: > 0 } && logDirectory.Contains('%')) {
                     logDirectory = System.Environment.ExpandEnvironmentVariables(logDirectory);
+                    options.LogDirectory = logDirectory;
                 }
-                if (logDirectory is { Length: > 0 } && !System.IO.Path.IsPathRooted(logDirectory)) {
-                    logDirectory = System.IO.Path.GetFullPath(logDirectory);
+            }
+            {
+                var baseDirectory = options.BaseDirectory;
+                var logDirectory = options.LogDirectory;
+                if (logDirectory is { Length: > 0 }
+                    && System.IO.Path.IsPathRooted(logDirectory)) {
+                    options.IsEnabled = true;
+                } else if (baseDirectory is { Length: > 0 }
+                    && logDirectory is { Length: > 0 }) {
+                    options.IsEnabled = System.IO.Path.IsPathRooted(System.IO.Path.Combine(baseDirectory, logDirectory));
                 }
-                options.LogDirectory = logDirectory;
-            } else {
-                options.IsEnabled = false;
             }
         }
 
@@ -236,485 +300,172 @@ namespace Brimborium.Extensions.Logging.LocalFile {
                 ? convert is null ? defaultValue : convert(defaultValue)
                 : convert is null ? result : convert(result);
     }
+}
 
-    [ProviderAlias("LocalFile")]
-    public sealed class LocalFileLoggerProvider : ILoggerProvider, ISupportExternalScope {
-        private readonly string? _path;
-        private readonly string _fileName;
-        private readonly int? _maxFileSize;
-        private readonly int? _maxRetainedFiles;
-        private readonly TimeSpan _interval;
-        private readonly int? _queueSize;
-        private readonly int? _batchSize;
-        private readonly IDisposable? _optionsChangeToken;
-        private readonly TimeSpan _flushPeriod;
-        private readonly SemaphoreSlim _semaphoreProcessMessageQueueWrite = new SemaphoreSlim(1, 1);
-        private readonly SemaphoreSlim _semaphoreProcessMessageQueueIdle = new SemaphoreSlim(1, 1);
-        private readonly List<LogMessage> _currentBatch = new(1024);
-        private long _processMessageQueueWatchDog = 10;
-        private int _messagesDropped;
-        private BlockingCollection<LogMessage>? _messageQueue;
-        private Task? _outputTask;
-        private CancellationTokenSource? _stopTokenSource;
-        private IExternalScopeProvider? _scopeProvider;
+#pragma warning disable IDE0079 // Remove unnecessary suppression
 
-        /// <summary>
-        /// Creates a new instance of <see cref="LocalFileLoggerProvider"/>.
-        /// </summary>
-        /// <param name="options">The options to use when creating a provider.</param>
-        [SuppressMessage("ApiDesign", "RS0022:Constructor make noninheritable base class inheritable", Justification = "Required for backwards compatibility")]
-        public LocalFileLoggerProvider(
-            IOptionsMonitor<LocalFileLoggerOptions> options) {
-            var loggerOptions = options.CurrentValue;
-            if (loggerOptions.BatchSize <= 0) {
-                throw new ArgumentOutOfRangeException(nameof(loggerOptions.BatchSize), $"{nameof(loggerOptions.BatchSize)} must be a positive number.");
-            }
-            if (loggerOptions.FlushPeriod <= TimeSpan.Zero) {
-                throw new ArgumentOutOfRangeException(nameof(loggerOptions.FlushPeriod), $"{nameof(loggerOptions.FlushPeriod)} must be longer than zero.");
-            }
+namespace Brimborium.Extensions.Logging.LocalFile {
+    using global::Microsoft.Extensions.Configuration;
+    using global::Microsoft.Extensions.Logging;
+    using global::Microsoft.Extensions.ObjectPool;
+    using global::System;
+    using global::System.Buffers;
+    using global::System.Collections.Generic;
+    using global::System.Globalization;
+    using global::System.Linq;
+    using global::System.Runtime.InteropServices;
+    using global::System.Text;
+    using global::System.Text.Json;
 
-            _path = loggerOptions.LogDirectory;
-            _fileName = loggerOptions.FileName;
-            _maxFileSize = loggerOptions.FileSizeLimit;
-            _maxRetainedFiles = loggerOptions.RetainedFileCountLimit;
-
-            // NOTE: Only IsEnabled is monitored
-            _interval = loggerOptions.FlushPeriod;
-            _batchSize = loggerOptions.BatchSize;
-            _queueSize = loggerOptions.BackgroundQueueSize;
-            _flushPeriod = loggerOptions.FlushPeriod;
-
-            _optionsChangeToken = options.OnChange(UpdateOptions);
-            UpdateOptions(options.CurrentValue);
-        }
-
-        /*
-        public void HandleHostApplicationLifetime(IHostApplicationLifetime lifetime) {
-            lifetime.ApplicationStopping.Register(() => Flush());
-            lifetime.ApplicationStopped.Register(() => Dispose());
-        }
-        */
-
-        private async Task WriteMessagesAsync(IEnumerable<LogMessage> messages, CancellationToken cancellationToken) {
-            // if (this._path is null) { throw new System.ArgumentException("_path is null"); }
-
-            if (string.IsNullOrEmpty(_path)) { return; }
-            try {
-                Directory.CreateDirectory(_path);
-            } catch {
-                return;
-            }
-
-            foreach (var group in messages.GroupBy(GetGrouping)) {
-                var fullName = GetFullName(group.Key);
-                var fileInfo = new FileInfo(fullName);
-                if (_maxFileSize.HasValue && _maxFileSize > 0 && fileInfo.Exists && fileInfo.Length > _maxFileSize) {
-                    return;
-                }
-                try {
-                    using (var streamWriter = File.AppendText(fullName)) {
-                        foreach (var item in group) {
-                            await streamWriter.WriteAsync(item.Message).ConfigureAwait(false);
-                        }
-                        //await streamWriter.FlushAsync(cancellationToken).ConfigureAwait(false);
-                        //await streamWriter.DisposeAsync();
-                        streamWriter.Flush();
-                    }
-                } catch (System.Exception error) {
-                    System.Console.Error.WriteLine(error.ToString());
-                }
-            }
-
-            RollFiles();
-        }
-
-        private string GetFullName((int Year, int Month, int Day) group) {
-            if (_path is null) { throw new System.ArgumentException("_path is null"); }
-
-            return Path.Combine(_path, $"{_fileName}{group.Year:0000}{group.Month:00}{group.Day:00}.txt");
-        }
-
-        private (int Year, int Month, int Day) GetGrouping(LogMessage message) {
-            return (message.Timestamp.Year, message.Timestamp.Month, message.Timestamp.Day);
-        }
-
-        private void RollFiles() {
-            if (_path is null) { throw new System.ArgumentException("_path is null"); }
-
-            try {
-                if (_maxRetainedFiles > 0) {
-                    {
-                        var files = new DirectoryInfo(_path)
-                            .GetFiles(_fileName + "*")
-                            .OrderByDescending(f => f.Name)
-                            .Skip(_maxRetainedFiles.Value);
-
-                        foreach (var item in files) {
-                            item.Delete();
-                        }
-                    }
-                    {
-                        var files = new DirectoryInfo(_path)
-                            .GetFiles("stdout*")
-                            .OrderByDescending(f => f.Name)
-                            .Skip(_maxRetainedFiles.Value);
-
-                        foreach (var item in files) {
-                            item.Delete();
-                        }
-                    }
-                }
-            } catch (System.Exception error) {
-                System.Console.Error.WriteLine(error.ToString());
-            }
-        }
-
-        internal IExternalScopeProvider? ScopeProvider => IncludeScopes ? _scopeProvider : null;
-
-        internal bool IncludeScopes { get; private set; }
-
-        /// <summary>
-        /// Checks if the queue is enabled.
-        /// </summary>
-        public bool IsEnabled { get; private set; }
-
-        public bool UseJSONFormat { get; private set; }
-
-        public bool IncludeEventId { get; private set; }
-
-        public JsonWriterOptions JsonWriterOptions { get; private set; }
-
-        /// <summary>
-        /// Gets or sets format string used to format timestamp in logging messages. Defaults to <c>null</c>.
-        /// </summary>
-        //[StringSyntax(StringSyntaxAttribute.DateTimeFormat)]
-        public string? TimestampFormat { get; set; }
-
-        /// <summary>
-        /// Gets or sets indication whether or not UTC timezone should be used to format timestamps in logging messages. Defaults to <c>false</c>.
-        /// </summary>
-        public bool UseUtcTimestamp { get; set; }
-
-        private void UpdateOptions(LocalFileLoggerOptions options) {
-            var oldIsEnabled = IsEnabled;
-            IsEnabled = options.IsEnabled;
-            UseJSONFormat = options.UseJSONFormat;
-            TimestampFormat = options.TimestampFormat;
-            UseUtcTimestamp = options.UseUtcTimestamp;
-            IncludeEventId = options.IncludeEventId;
-            JsonWriterOptions = options.JsonWriterOptions;
-
-
-            IncludeScopes = options.IncludeScopes;
-
-            if (oldIsEnabled != IsEnabled) {
-                if (IsEnabled) {
-                    Start();
-                } else {
-                    Stop();
-                }
-            }
-
-        }
-
-        private async Task ProcessLogQueue() {
-            if (_stopTokenSource is null) { throw new ArgumentException("_stopTokenSource is null"); }
-            if (_messageQueue is null) { throw new ArgumentException("_messageQueue is null"); }
-
-            try {
-                _processMessageQueueWatchDog = 0;
-                while (!_stopTokenSource.IsCancellationRequested) {
-                    if (await FlushAsync(_stopTokenSource.Token)) {
-                        //
-                        _processMessageQueueWatchDog = 10;
-                    } else {
-                        if (_stopTokenSource.IsCancellationRequested) { return; }
-                        _processMessageQueueWatchDog--;
-                        if (_processMessageQueueWatchDog > 0) {
-                            await IntervalAsync(_flushPeriod, _stopTokenSource.Token).ConfigureAwait(false);
-                        } else {
-                            try {
-                                await _semaphoreProcessMessageQueueIdle.WaitAsync(_stopTokenSource.Token).ConfigureAwait(false);
-                            } catch { }
-                        }
-                    }
-                }
-            } catch (System.OperationCanceledException) {
-            } catch (Exception error) {
-                System.Console.Error.WriteLine(error.ToString());
-            } finally {
-                using (_stopTokenSource) {
-                    _stopTokenSource = null;
-                }
-            }
-        }
-
-        public async Task<bool> FlushAsync(CancellationToken cancellationToken) {
-            await _semaphoreProcessMessageQueueWrite.WaitAsync();
-            try {
-                if (!(_messageQueue is { } messageQueue)) { return false; }
-
-                var limit = _batchSize ?? int.MaxValue;
-
-                while (limit > 0 && messageQueue.TryTake(out var message)) {
-                    _currentBatch.Add(message);
-                    limit--;
-                }
-
-                var messagesDropped = Interlocked.Exchange(ref _messagesDropped, 0);
-                if (messagesDropped != 0) {
-                    _currentBatch.Add(new LogMessage(DateTimeOffset.UtcNow, $"{messagesDropped} message(s) dropped because of queue size limit. Increase the queue size or decrease logging verbosity to avoid {Environment.NewLine}"));
-                }
-
-                if (_currentBatch.Count > 0) {
-                    try {
-                        await WriteMessagesAsync(_currentBatch, cancellationToken).ConfigureAwait(false);
-                        _currentBatch.Clear();
-                    } catch {
-                        // ignored
-                    }
-                    return true;
-                } else {
-                    return false;
-                }
-            } finally {
-                _semaphoreProcessMessageQueueWrite.Release();
-            }
-        }
-
-        /// <summary>
-        /// Wait for the given <see cref="TimeSpan"/>.
-        /// </summary>
-        /// <param name="interval">The amount of time to wait.</param>
-        /// <param name="cancellationToken">A <see cref="CancellationToken"/> that can be used to cancel the delay.</param>
-        /// <returns>A <see cref="Task"/> which completes when the <paramref name="interval"/> has passed or the <paramref name="cancellationToken"/> has been canceled.</returns>
-        private Task IntervalAsync(TimeSpan interval, CancellationToken cancellationToken) {
-            return Task.Delay(interval, cancellationToken);
-        }
-
-        internal void AddMessage(DateTimeOffset timestamp, string message) {
-            if (_messageQueue is null) { throw new ArgumentException("_messageQueue is null"); }
-
-            if (!_messageQueue.IsAddingCompleted) {
-                try {
-                    if (!_messageQueue.TryAdd(
-                       item: new LogMessage(timestamp, message),
-                        millisecondsTimeout: 0,
-                        cancellationToken: (_stopTokenSource is null)
-                        ? CancellationToken.None
-                        : _stopTokenSource.Token)) {
-                        Interlocked.Increment(ref _messagesDropped);
-                    } else {
-                        try {
-                            if (0 == _semaphoreProcessMessageQueueIdle.CurrentCount) {
-                                _semaphoreProcessMessageQueueIdle.Release();
-                            }
-                        } catch {
-                        }
-                    }
-                } catch {
-                    //cancellation token canceled or CompleteAdding called
-                }
-            }
-        }
-
-        private void Start() {
-            _messageQueue = _queueSize == null ?
-                new BlockingCollection<LogMessage>(new ConcurrentQueue<LogMessage>()) :
-                new BlockingCollection<LogMessage>(new ConcurrentQueue<LogMessage>(), _queueSize.Value);
-
-            _stopTokenSource = new CancellationTokenSource();
-            _outputTask = Task.Run(ProcessLogQueue);
-        }
-
-        private void Stop() {
-            _stopTokenSource?.Cancel();
-            _messageQueue?.CompleteAdding();
-
-            try {
-                _outputTask?.Wait(_interval);
-            } catch (TaskCanceledException) {
-            } catch (AggregateException ex) when (ex.InnerExceptions.Count == 1 && ex.InnerExceptions[0] is TaskCanceledException) {
-            }
-        }
-
-        /// <inheritdoc/>
-        public void Dispose() {
-            _optionsChangeToken?.Dispose();
-            if (IsEnabled) {
-                _messageQueue?.CompleteAdding();
-
-                try {
-                    _outputTask?.Wait(_flushPeriod);
-                } catch (TaskCanceledException) {
-                } catch (AggregateException ex) when (ex.InnerExceptions.Count == 1 && ex.InnerExceptions[0] is TaskCanceledException) {
-                }
-
-                Stop();
-            }
-        }
-
-        public void Flush() {
-            FlushAsync(CancellationToken.None)
-                .GetAwaiter()
-                .GetResult();
-        }
-
-        /// <summary>
-        /// Creates a <see cref="LocalFileLogger"/> with the given <paramref name="categoryName"/>.
-        /// </summary>
-        /// <param name="categoryName">The name of the category to create this logger with.</param>
-        /// <returns>The <see cref="LocalFileLogger"/> that was created.</returns>
-        public ILogger CreateLogger(string categoryName) => new LocalFileLogger(this, categoryName);
-
-        /// <summary>
-        /// Sets the scope on this provider.
-        /// </summary>
-        /// <param name="scopeProvider">Provides the scope.</param>
-        void ISupportExternalScope.SetScopeProvider(IExternalScopeProvider scopeProvider) {
-            _scopeProvider = scopeProvider;
-        }
-    }
-
+    /// <summary>
+    /// 
+    /// </summary>
     [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
     internal sealed class LocalFileLogger : ILogger {
         private static readonly byte[] _crlf = new byte[] { 13, 10 };
-        private static readonly ObjectPool<StringBuilder> _stringBuilderPool = (new Microsoft.Extensions.ObjectPool.DefaultObjectPoolProvider()).CreateStringBuilderPool();
+        private static readonly ObjectPool<StringBuilder> _stringBuilderPool = (new DefaultObjectPoolProvider()).CreateStringBuilderPool();
 
         private readonly LocalFileLoggerProvider _provider;
         private readonly string _category;
 
         public LocalFileLogger(LocalFileLoggerProvider loggerProvider, string categoryName) {
-            _provider = loggerProvider;
-            _category = categoryName;
+            this._provider = loggerProvider;
+            this._category = categoryName;
         }
 
         public IDisposable BeginScope<TState>(TState state)
             where TState : notnull
-            => _provider.ScopeProvider?.Push(state) ?? NullScope.Instance;
+            => this._provider.ScopeProvider?.Push(state)
+            ?? NullScope.Instance;
 
-        public bool IsEnabled(LogLevel logLevel) => (_provider.IsEnabled) && (logLevel != LogLevel.None);
+        public bool IsEnabled(LogLevel logLevel)
+            => (this._provider.IsEnabled)
+            && (logLevel != LogLevel.None);
 
         public void Log<TState>(
             LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter
-            ) => Log(
-                timestamp: _provider.UseUtcTimestamp ? DateTimeOffset.UtcNow : DateTimeOffset.Now,
+            ) => this.Log(
+                timestamp: this._provider.UseUtcTimestamp ? DateTimeOffset.UtcNow : DateTimeOffset.Now,
                 logLevel: logLevel, eventId: eventId, state: state, exception: exception, formatter: formatter);
 
         public void Log<TState>(DateTimeOffset timestamp, LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) {
-            if (!IsEnabled(logLevel)) {
+            if (!this.IsEnabled(logLevel)) {
                 return;
             }
 
-            if (_provider.UseJSONFormat) {
-                //string message = formatter(state, exception);
-                //if (exception == null && message == null) {
-                //    return;
-                //}
-                var message = "";
-                if (exception is not null) {
-                    message = formatter(state, exception);
-                }
-                var DefaultBufferSize = 1024 + message.Length;
-                using (var output = new PooledByteBufferWriter(DefaultBufferSize)) {
-                    using (var writer = new Utf8JsonWriter(output, _provider.JsonWriterOptions)) {
-                        writer.WriteStartObject();
-                        var timestampFormat = _provider.TimestampFormat ?? "u"; //"yyyy-MM-dd HH:mm:ss.fff zzz";
-                                                                                //if (timestampFormat != null) {
-                                                                                //DateTimeOffset dateTimeOffset = _provider.UseUtcTimestamp ? DateTimeOffset.UtcNow : DateTimeOffset.Now;
-                        writer.WriteString("Timestamp", timestamp.ToString(timestampFormat));
-                        //}
-                        writer.WriteNumber("EventId", eventId.Id);
-                        writer.WriteString("LogLevel", GetLogLevelString(logLevel));
-                        writer.WriteString("Category", _category);
-                        if (!string.IsNullOrEmpty(message)) {
-                            writer.WriteString("Message", message);
-                        }
-
-                        if (exception != null) {
-                            var exceptionMessage = exception.ToString();
-                            if (!_provider.JsonWriterOptions.Indented) {
-                                exceptionMessage = exceptionMessage.Replace(Environment.NewLine, " ");
-                            }
-                            writer.WriteString(nameof(Exception), exceptionMessage);
-                        }
-
-                        if (state != null) {
-                            writer.WriteStartObject(nameof(state));
-                            // writer.WriteString("Message", state.ToString());
-                            if (state is IReadOnlyCollection<KeyValuePair<string, object>> stateProperties) {
-                                foreach (var item in stateProperties) {
-                                    if (item.Key == "{OriginalFormat}") {
-                                        WriteItem(writer, item);
-                                        break;
-                                    } else {
-                                    }
-                                }
-                                foreach (var item in stateProperties) {
-                                    if (item.Key == "{OriginalFormat}") {
-                                        //
-                                    } else {
-                                        WriteItem(writer, item);
-                                    }
-                                }
-                            }
-                            writer.WriteEndObject();
-                        }
-                        WriteScopeInformation(writer, _provider.ScopeProvider);
-                        writer.WriteEndObject();
-                        writer.Flush();
-                        //if ((output.WrittenCount + 2) < output.Capacity) { }
-                        output.Write(new ReadOnlySpan<byte>(_crlf));
-                    }
-                    //message = Encoding.UTF8.GetString(output.WrittenMemory.Span);
-                    message = Encoding.UTF8.GetString(output.WrittenMemory.ToArray());
-                }
-                _provider.AddMessage(timestamp, message);
+            if (this._provider.UseJSONFormat) {
+                this.LogJSON(timestamp, logLevel, eventId, state, exception, formatter);
             } else {
-
-                //var builder = new StringBuilder(1024);
-                var builder = _stringBuilderPool.Get();
-                var timestampFormat = _provider.TimestampFormat ?? "yyyy-MM-dd HH:mm:ss.fff zzz";
-                builder.Append(timestamp.ToString(timestampFormat /*"yyyy-MM-dd HH:mm:ss.fff zzz"*/, CultureInfo.InvariantCulture));
-                builder.Append(" [");
-                //builder.Append(logLevel.ToString());
-                builder.Append(GetLogLevelString(logLevel));
-                builder.Append("] ");
-                builder.Append(_category);
-
-                var scopeProvider = _provider.ScopeProvider;
-                if (scopeProvider != null) {
-                    scopeProvider.ForEachScope((scope, stringBuilder) => {
-                        stringBuilder.Append(" => ").Append(scope);
-                    }, builder);
-
-                    //builder.AppendLine(":");
-                    builder.Append(":");
-                } else {
-                    builder.Append(": ");
-                }
-
-                if (_provider.IncludeEventId) {
-                    builder.Append(eventId.Id.ToString("d6"));
-                    builder.Append(": ");
-                }
-                var message = formatter(state, exception);
-                builder.Append(message);
-                //.Replace(Environment.NewLine, "; ").Replace("\r", "; ").Replace("\n", "; ")
-                if (exception != null) {
-                    //builder.AppendLine(exception.ToString()).Replace(Environment.NewLine, "; ");
-                    builder.Append(exception.ToString());
-                }
-
-                builder.Replace(Environment.NewLine, "; ");
-                builder.Replace("\r", "; ");
-                builder.Replace("\n", "; ");
-                builder.AppendLine();
-                _provider.AddMessage(timestamp, builder.ToString());
-
-                builder.Clear();
-                _stringBuilderPool.Return(builder);
+                this.LogPlainText(timestamp, logLevel, eventId, state, exception, formatter);
             }
+        }
+
+        private void LogJSON<TState>(DateTimeOffset timestamp, LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) {
+            var message = "";
+            if (exception is not null) {
+                message = formatter(state, exception);
+            }
+            var DefaultBufferSize = 1024 + message.Length;
+            using (var output = new PooledByteBufferWriter(DefaultBufferSize)) {
+                using (var writer = new Utf8JsonWriter(output, this._provider.JsonWriterOptions)) {
+                    writer.WriteStartObject();
+                    var timestampFormat = this._provider.TimestampFormat ?? "u"; //"yyyy-MM-dd HH:mm:ss.fff zzz";
+                    writer.WriteString("Timestamp", timestamp.ToString(timestampFormat));
+
+                    writer.WriteNumber("EventId", eventId.Id);
+                    writer.WriteString("LogLevel", GetLogLevelString(logLevel));
+                    writer.WriteString("Category", this._category);
+                    if (!string.IsNullOrEmpty(message)) {
+                        writer.WriteString("Message", message);
+                    }
+
+                    if (exception != null) {
+                        var exceptionMessage = exception.ToString();
+                        if (!this._provider.JsonWriterOptions.Indented) {
+                            exceptionMessage = exceptionMessage.Replace(Environment.NewLine, " ");
+                        }
+                        writer.WriteString(nameof(Exception), exceptionMessage);
+                    }
+
+                    if (state != null) {
+                        writer.WriteStartObject(nameof(state));
+                        // writer.WriteString("Message", state.ToString());
+                        if (state is IReadOnlyCollection<KeyValuePair<string, object>> stateProperties) {
+                            foreach (var item in stateProperties) {
+                                if (item.Key == "{OriginalFormat}") {
+                                    WriteItem(writer, item);
+                                    break;
+                                } else {
+                                }
+                            }
+                            foreach (var item in stateProperties) {
+                                if (item.Key == "{OriginalFormat}") {
+                                    //
+                                } else {
+                                    WriteItem(writer, item);
+                                }
+                            }
+                        }
+                        writer.WriteEndObject();
+                    }
+                    this.WriteScopeInformation(writer, this._provider.ScopeProvider);
+                    writer.WriteEndObject();
+                    writer.Flush();
+
+                    output.Write(new ReadOnlySpan<byte>(_crlf));
+                }
+#if NET8_0_OR_GREATER
+                message = Encoding.UTF8.GetString(output.WrittenMemory.Span);
+#else
+                    message = Encoding.UTF8.GetString(output.WrittenMemory.ToArray());
+#endif
+            }
+            this._provider.AddMessage(timestamp, message);
+        }
+
+        private void LogPlainText<TState>(DateTimeOffset timestamp, LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) {
+            var builder = _stringBuilderPool.Get();
+            var timestampFormat = this._provider.TimestampFormat ?? "yyyy-MM-dd HH:mm:ss.fff zzz";
+            _ = builder.Append(timestamp.ToString(timestampFormat /*"yyyy-MM-dd HH:mm:ss.fff zzz"*/, CultureInfo.InvariantCulture));
+
+            _ = builder.Append(" [");
+            _ = builder.Append(GetLogLevelString(logLevel));
+            _ = builder.Append("] ");
+            _ = builder.Append(this._category);
+
+            var scopeProvider = this._provider.ScopeProvider;
+            if (scopeProvider != null) {
+                scopeProvider.ForEachScope(static (scope, stringBuilder) => {
+                    _ = stringBuilder.Append(" => ").Append(scope);
+                }, builder);
+
+                _ = builder.Append(": ");
+            } else {
+                _ = builder.Append(": ");
+            }
+
+            if (this._provider.IncludeEventId) {
+                _ = builder.Append(eventId.Id.ToString("d6"));
+                _ = builder.Append(": ");
+            }
+            var message = formatter(state, exception);
+            _ = builder.Append(message);
+
+            if (exception != null) {
+                _ = builder.Append(exception.ToString());
+            }
+            if (this._provider.NewLineReplacement is { } newLineReplacement) {
+                _=builder
+                    .Replace("\r\n", newLineReplacement)
+                    .Replace("\r", newLineReplacement)
+                    .Replace("\n", newLineReplacement);
+            }
+            _ = builder.AppendLine();
+
+            this._provider.AddMessage(timestamp, builder.ToString());
+
+            _ = builder.Clear();
+            _stringBuilderPool.Return(builder);
         }
 
         private static string GetLogLevelString(LogLevel logLevel) {
@@ -730,7 +481,7 @@ namespace Brimborium.Extensions.Logging.LocalFile {
         }
 
         private void WriteScopeInformation(Utf8JsonWriter writer, IExternalScopeProvider? scopeProvider) {
-            if (_provider.IncludeScopes && scopeProvider != null) {
+            if (this._provider.IncludeScopes && scopeProvider != null) {
                 writer.WriteStartArray("Scopes");
                 scopeProvider.ForEachScope((scope, state) => {
                     if (scope is IEnumerable<KeyValuePair<string, object>> scopeItems) {
@@ -764,7 +515,7 @@ namespace Brimborium.Extensions.Logging.LocalFile {
 #if NET8_0_OR_GREATER
                     writer.WriteString(key, MemoryMarshal.CreateSpan(ref charValue, 1));
 #else
-                    writer.WriteString(key, charValue.ToString());
+                        writer.WriteString(key, charValue.ToString());
 #endif
                     break;
                 case decimal decimalValue:
@@ -805,25 +556,601 @@ namespace Brimborium.Extensions.Logging.LocalFile {
 
         private static string? ToInvariantString(object? obj) => Convert.ToString(obj, CultureInfo.InvariantCulture);
     }
+}
 
-    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
-    internal readonly struct LogMessage(DateTimeOffset timestamp, string message) {
-        internal readonly DateTimeOffset Timestamp = timestamp;
+#pragma warning disable IDE0079 // Remove unnecessary suppression
 
-        internal readonly string Message = message;
-    }
+namespace Brimborium.Extensions.Logging.LocalFile {
+    using global::Microsoft.Extensions.Logging;
+    using global::Microsoft.Extensions.Options;
+    using global::System;
+    using global::System.Collections.Concurrent;
+    using global::System.Collections.Generic;
+    using global::System.IO;
+    using global::System.Linq;
+    using global::System.Text.Json;
+    using global::System.Threading;
+    using global::System.Threading.Tasks;
 
-    /// <summary>
-    /// An empty scope without any logic
-    /// </summary>
-    internal sealed class NullScope : IDisposable {
-        public static NullScope Instance { get; } = new NullScope();
+#if LocalFileIHostApplicationLifetime
+    using Microsoft.Extensions.DependencyInjection;
+    using Microsoft.Extensions.Hosting;
+#endif
 
-        private NullScope() {
+    [ProviderAlias("LocalFile")]
+    public sealed partial class LocalFileLoggerProvider
+        : ILoggerProvider, ISupportExternalScope {
+        // values from the options
+        private readonly string? _path;
+        private readonly bool _isPathValid;
+        private readonly string _fileName;
+        private readonly int? _maxFileSize;
+        private readonly int? _maxRetainedFiles;
+        private readonly string? _newLineReplacement;
+        private readonly TimeSpan _interval;
+        private readonly int? _queueSize;
+        private readonly int? _batchSize;
+        private readonly TimeSpan _flushPeriod;
+        private bool _IsEnabled;
+
+        // changes
+        private IDisposable? _optionsChangeToken;
+
+        // message sink 
+        private CancellationTokenSource? _stopTokenSource;
+        private BlockingCollection<LogMessage>? _messageQueue;
+        private List<LogMessage> _currentBatchPool = new(1024);
+        private int _messagesDropped;
+
+        // loop
+        private Task? _outputTask;
+
+        // handle cool down
+        private readonly SemaphoreSlim _semaphoreProcessMessageQueueWrite = new(1, 1);
+        private readonly SemaphoreSlim _semaphoreProcessMessageQueueIdle = new(1, 1);
+        private const long _processMessageQueueWatchDogReset = 10;
+        private long _processMessageQueueWatchDog = _processMessageQueueWatchDogReset;
+
+        private IExternalScopeProvider? _scopeProvider;
+        private int _workingState;
+
+        /// <summary>
+        /// Creates a new instance of <see cref="LocalFileLoggerProvider"/>.
+        /// </summary>
+        /// <param name="options">The options to use when creating a provider.</param>
+        public LocalFileLoggerProvider(
+            IOptionsMonitor<LocalFileLoggerOptions> options) {
+            var loggerOptions = options.CurrentValue;
+            if (loggerOptions.BatchSize <= 0) {
+                throw new ArgumentOutOfRangeException("loggerOptions.BatchSize", $"{nameof(loggerOptions.BatchSize)} must be a positive number.");
+            }
+            if (loggerOptions.FlushPeriod <= TimeSpan.Zero) {
+                throw new ArgumentOutOfRangeException("loggerOptions.FlushPeriod", $"{nameof(loggerOptions.FlushPeriod)} must be longer than zero.");
+            }
+            {
+                if (loggerOptions.LogDirectory is { Length: > 0 } logDirectory) {
+                    string? path = default;
+                    if (loggerOptions.BaseDirectory is { Length: > 0 } baseDirectory) {
+                        path = System.IO.Path.Combine(baseDirectory, logDirectory);
+                    } else if (loggerOptions.LogDirectory is { Length: > 0 }) {
+                        path = logDirectory;
+                    }
+                    if (path is { Length: > 0 }
+                        && System.IO.Path.IsPathFullyQualified(path)) {
+                        this._path = path;
+                        this._isPathValid = true;
+                    }
+                }
+
+                this._fileName = loggerOptions.FileName;
+                this._maxFileSize = loggerOptions.FileSizeLimit;
+                this._maxRetainedFiles = loggerOptions.RetainedFileCountLimit;
+                if (loggerOptions.NewLineReplacement is { Length: 4 } newLineReplacement) {
+                    this._newLineReplacement = loggerOptions.NewLineReplacement;
+                } else {
+                    this._newLineReplacement = null;
+                }
+
+                this._interval = loggerOptions.FlushPeriod;
+                this._batchSize = loggerOptions.BatchSize;
+                this._queueSize = loggerOptions.BackgroundQueueSize;
+                this._flushPeriod = loggerOptions.FlushPeriod;
+            }
+            this._optionsChangeToken = options.OnChange(this.UpdateOptions);
+            this.UpdateOptions(options.CurrentValue);
         }
 
-        void IDisposable.Dispose() { }
+        internal IExternalScopeProvider? ScopeProvider => this.IncludeScopes ? this._scopeProvider : null;
+
+        internal bool IncludeScopes { get; private set; }
+
+        internal bool IsEnabled => this._IsEnabled && this._isPathValid;
+
+        internal bool UseJSONFormat { get; private set; }
+
+        internal bool IncludeEventId { get; private set; }
+
+        internal string? NewLineReplacement => this._newLineReplacement;
+
+        public JsonWriterOptions JsonWriterOptions { get; private set; }
+
+        /// <summary>
+        /// Gets or sets format string used to format timestamp in logging messages. Defaults to <c>null</c>.
+        /// </summary>
+        //[StringSyntax(StringSyntaxAttribute.DateTimeFormat)]
+        public string? TimestampFormat { get; set; }
+
+        /// <summary>
+        /// Gets or sets indication whether or not UTC timezone should be used to format timestamps in logging messages. Defaults to <c>false</c>.
+        /// </summary>
+        public bool UseUtcTimestamp { get; set; }
+
+        private void UpdateOptions(LocalFileLoggerOptions options) {
+            this._IsEnabled = options.IsEnabled;
+            this.UseJSONFormat = options.UseJSONFormat;
+            this.TimestampFormat = options.TimestampFormat;
+            this.UseUtcTimestamp = options.UseUtcTimestamp;
+            this.IncludeEventId = options.IncludeEventId;
+            this.JsonWriterOptions = options.JsonWriterOptions;
+
+            this.IncludeScopes = options.IncludeScopes;
+        }
+
+
+        // LocalFileLogger will call this
+        internal void AddMessage(DateTimeOffset timestamp, string message) {
+            if (!this.IsEnabled) {
+                return;
+            }
+
+            if (this.EnsureMessageQueue(out var messageQueue, out _)
+                || (this._workingState <= 0)) {
+                // The first time AddMessage is called EnsureMessageQueue will return true since the _messageQueue was created.
+                this.Start();
+            }
+
+            if (!messageQueue.IsAddingCompleted) {
+                try {
+                    if (!messageQueue.TryAdd(
+                       item: new LogMessage(timestamp, message),
+                        millisecondsTimeout: 0,
+                        cancellationToken: (this._stopTokenSource is null)
+                            ? CancellationToken.None
+                            : this._stopTokenSource.Token)) {
+                        _ = System.Threading.Interlocked.Increment(ref this._messagesDropped);
+                    } else {
+                        try {
+                            if (0 == this._semaphoreProcessMessageQueueIdle.CurrentCount) {
+                                this._semaphoreProcessMessageQueueIdle.Release();
+                            }
+                        } catch {
+                        }
+                    }
+                } catch {
+                    //cancellation token canceled or CompleteAdding called
+                }
+            }
+        }
+
+        private bool EnsureMessageQueue(out BlockingCollection<LogMessage> messageQueue, out CancellationTokenSource stopTokenSource) {
+            if ((_messageQueue) is null || _stopTokenSource is null) {
+                lock (this._semaphoreProcessMessageQueueWrite) {
+                    if (_messageQueue is null || _stopTokenSource is null) {
+                        // messageQueue
+                        var concurrentMessageQueue = new ConcurrentQueue<LogMessage>();
+                        if (this._queueSize == null) {
+                            messageQueue = new BlockingCollection<LogMessage>(concurrentMessageQueue);
+                        } else {
+                            messageQueue = new BlockingCollection<LogMessage>(concurrentMessageQueue, this._queueSize.Value);
+                        }
+
+                        stopTokenSource = new CancellationTokenSource();
+
+                        this._messageQueue = messageQueue;
+                        this._stopTokenSource = stopTokenSource;
+                        System.Threading.Interlocked.MemoryBarrier();
+                        return true;
+                    }
+                }
+            }
+
+            {
+                messageQueue = this._messageQueue;
+                stopTokenSource = this._stopTokenSource;
+                return false;
+            }
+        }
+
+        internal void Start() {
+            if (0 < this._workingState) { return; }
+            if (!this._isPathValid) { return; }
+
+            lock (this) {
+                if (0 < this._workingState) { return; }
+
+                _ = this.EnsureMessageQueue(out _, out _);
+                this._outputTask = Task.Run(this.ProcessLogQueue);
+                this.StartHostApplicationLifetime();
+                this._workingState = 1;
+            }
+        }
+
+        partial void StartHostApplicationLifetime();
+
+        internal void Stop() {
+            if (this._workingState <= 0) { return; }
+
+            lock (this) {
+                if (this._workingState <= 0) { return; }
+
+                this._workingState = -1;
+
+                var stopTokenSource = this._stopTokenSource;
+                this._stopTokenSource = default;
+                var messageQueue = this._messageQueue;
+                this._messageQueue = default;
+                var outputTask = this._outputTask;
+                this._outputTask = default;
+
+                stopTokenSource?.Cancel();
+                messageQueue?.CompleteAdding();
+                try {
+                    this._outputTask?.Wait(this._interval);
+                } catch (TaskCanceledException) {
+                } catch (AggregateException ex) when (ex.InnerExceptions.Count == 1 && ex.InnerExceptions[0] is TaskCanceledException) {
+                }
+
+                this._workingState = 0;
+            }
+        }
+
+        private async Task ProcessLogQueue() {
+            this.EnsureMessageQueue(out var messageQueue, out var stopTokenSource);
+
+            try {
+                this._processMessageQueueWatchDog = 0;
+                while (!stopTokenSource.IsCancellationRequested) {
+                    var didFlushContent = await this.FlushAsync(stopTokenSource.Token);
+                    if (didFlushContent) {
+                        // content was written - so wait and repeat
+                        this._processMessageQueueWatchDog = _processMessageQueueWatchDogReset;
+                        if (stopTokenSource.IsCancellationRequested) { return; }
+
+                        await Task.Delay(this._flushPeriod, stopTokenSource.Token).ConfigureAwait(false);
+                        continue;
+                    } else {
+                        if (0 <= this._processMessageQueueWatchDog) {
+                            this._processMessageQueueWatchDog--;
+                        }
+                        if (0 < this._processMessageQueueWatchDog) {
+                            // no content was written - and - so wait for a time.
+                            await Task.Delay(this._flushPeriod, stopTokenSource.Token)
+                                .ConfigureAwait(false);
+                        } else {
+                            // no content was written - and long time nothing happened - so wait for idle.
+                            try {
+                                await this._semaphoreProcessMessageQueueIdle
+                                    .WaitAsync(stopTokenSource.Token)
+                                    .ConfigureAwait(false);
+                            } catch { }
+                        }
+                    }
+                }
+            } catch (System.OperationCanceledException) {
+                // good bye
+            } catch (Exception error) {
+                InternalLogger.GetInstance().Fail(error);
+            }
+        }
+        /// <summary>
+        /// Flush the remaining log content to disk.
+        /// </summary>
+        /// <param name="cancellationToken">stop me</param>
+        /// <returns></returns>
+        public async Task<bool> FlushAsync(CancellationToken cancellationToken) {
+            await this._semaphoreProcessMessageQueueWrite.WaitAsync();
+            try {
+                return await FlushInner(cancellationToken).ConfigureAwait(false);
+            } finally {
+                this._semaphoreProcessMessageQueueWrite.Release();
+            }
+        }
+
+        private async Task<bool> FlushInner(CancellationToken cancellationToken) {
+            if (!(this._messageQueue is { } messageQueue)) { return false; }
+
+            var limit = this._batchSize ?? int.MaxValue;
+
+#pragma warning disable CS8601 // Possible null reference assignment.
+            List<LogMessage> currentBatch =
+                System.Threading.Interlocked.Exchange<List<LogMessage>?>(ref this._currentBatchPool, default)
+                ?? new(1024);
+#pragma warning restore CS8601 // Possible null reference assignment.
+            while (limit > 0 && messageQueue.TryTake(out var message)) {
+                currentBatch.Add(message);
+                limit--;
+            }
+
+            var messagesDropped = Interlocked.Exchange(ref this._messagesDropped, 0);
+            if (messagesDropped != 0) {
+                currentBatch.Add(new LogMessage(DateTimeOffset.UtcNow, $"{messagesDropped} message(s) dropped because of queue size limit. Increase the queue size or decrease logging verbosity to avoid {Environment.NewLine}"));
+            }
+
+            if (currentBatch.Count > 0) {
+                try {
+                    await this.WriteMessagesAsync(currentBatch, cancellationToken).ConfigureAwait(false);
+                    currentBatch.Clear();
+#pragma warning disable CS8601 // Possible null reference assignment.
+                    System.Threading.Interlocked.Exchange<List<LogMessage>?>(ref this._currentBatchPool, currentBatch);
+#pragma warning restore CS8601 // Possible null reference assignment.
+                } catch {
+                    // ignored
+                }
+                return true;
+            } else {
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Flush the remaining log content to disk - use this only at the end.
+        /// Otherwise Use FlushAsync().GetAwaiter().GetResult();
+        /// </summary>
+        public void Flush()
+            => this.FlushInner(CancellationToken.None).GetAwaiter().GetResult();
+
+        private async Task WriteMessagesAsync(IEnumerable<LogMessage> messages, CancellationToken cancellationToken) {
+            if (!this.IsEnabled
+                || !(this._path is { Length: > 0 })
+                ) {
+                return;
+            }
+
+            try {
+                Directory.CreateDirectory(this._path);
+            } catch {
+                return;
+            }
+
+            foreach (var group in messages.GroupBy(this.GetGrouping)) {
+                var fullName = this.GetFullName(group.Key);
+                var fileInfo = new FileInfo(fullName);
+                if (this._maxFileSize.HasValue && this._maxFileSize > 0 && fileInfo.Exists && fileInfo.Length > this._maxFileSize) {
+                    return;
+                }
+                try {
+                    using (var streamWriter = File.AppendText(fullName)) {
+                        foreach (var item in group) {
+                            await streamWriter.WriteAsync(item.Message).ConfigureAwait(false);
+                        }
+#if NET8_0_OR_GREATER
+                        await streamWriter.FlushAsync(cancellationToken).ConfigureAwait(false);
+                        await streamWriter.DisposeAsync();
+#else
+                        streamWriter.Flush();
+#endif
+                    }
+                } catch (System.Exception error) {
+                    System.Console.Error.WriteLine(error.ToString());
+                }
+            }
+
+            this.RollFiles();
+        }
+
+        private string GetFullName((int Year, int Month, int Day) group) {
+            if (this._path is null) { throw new System.ArgumentException("_path is null"); }
+
+            return Path.Combine(this._path, $"{this._fileName}{group.Year:0000}{group.Month:00}{group.Day:00}.txt");
+        }
+
+        private (int Year, int Month, int Day) GetGrouping(LogMessage message) {
+            return (message.Timestamp.Year, message.Timestamp.Month, message.Timestamp.Day);
+        }
+
+        private void RollFiles() {
+            if (this._path is null) { throw new System.ArgumentException("_path is null"); }
+
+            if (this._maxRetainedFiles > 0) {
+                try {
+                    var files = new DirectoryInfo(this._path)
+                        .GetFiles(this._fileName + "*")
+                        .OrderByDescending(f => f.Name)
+                        .Skip(this._maxRetainedFiles.Value);
+
+                    foreach (var item in files) {
+                        try {
+                            item.Delete();
+                        } catch (System.Exception error) {
+                            System.Console.Error.WriteLine(error.ToString());
+                        }
+                    }
+                } catch (System.Exception error) {
+                    System.Console.Error.WriteLine(error.ToString());
+                }
+            }
+
+#if false
+            if (_maxRetainedFiles > 0) {
+                try {
+                    var files = new DirectoryInfo(_path)
+                        .GetFiles("stdout*")
+                        .OrderByDescending(f => f.Name)
+                        .Skip(_maxRetainedFiles.Value);
+
+                    foreach (var item in files) {
+                        try {
+                            item.Delete();
+                        } catch (System.Exception error) {
+                            System.Console.Error.WriteLine(error.ToString());
+                        }
+                    }
+                } catch (System.Exception error) {
+                    System.Console.Error.WriteLine(error.ToString());
+                }
+            }
+#endif
+
+        }
+
+        /// <inheritdoc/>
+        public void Dispose() {
+            using (this._optionsChangeToken) {
+                this._optionsChangeToken = default;
+            }
+            if (0 < this._workingState) {
+                this._messageQueue?.CompleteAdding();
+
+                try {
+                    this._outputTask?.Wait(this._flushPeriod);
+                } catch (TaskCanceledException) {
+                } catch (AggregateException ex) when (ex.InnerExceptions.Count == 1 && ex.InnerExceptions[0] is TaskCanceledException) {
+                }
+
+                this.Stop();
+            }
+            using (this._stopTokenSource) {
+                this._stopTokenSource = default;
+            }
+            this.DisposeHostApplicationLifetime();
+        }
+
+        partial void DisposeHostApplicationLifetime();
+
+        /// <summary>
+        /// Creates a <see cref="LocalFileLogger"/> with the given <paramref name="categoryName"/>.
+        /// </summary>
+        /// <param name="categoryName">The name of the category to create this logger with.</param>
+        /// <returns>The <see cref="LocalFileLogger"/> that was created.</returns>
+        public ILogger CreateLogger(string categoryName) => new LocalFileLogger(this, categoryName);
+
+        /// <summary>
+        /// Sets the scope on this provider.
+        /// </summary>
+        /// <param name="scopeProvider">Provides the scope.</param>
+        void ISupportExternalScope.SetScopeProvider(IExternalScopeProvider scopeProvider) {
+            this._scopeProvider = scopeProvider;
+        }
     }
+
+#if LocalFileIHostApplicationLifetime
+
+    public sealed partial class LocalFileLoggerProvider {
+        private readonly LazyGetService<IHostApplicationLifetime>? _lazyLifetime;
+
+        private bool _lifetimeRegistered;
+        private CancellationTokenRegistration _flushRegistered;
+        private CancellationTokenRegistration _disposeRegistered;
+
+        /// <summary>
+        /// Creates a new instance of <see cref="LocalFileLoggerProvider"/>.
+        /// </summary>
+        /// <param name="options">The options to use when creating a provider.</param>
+        public LocalFileLoggerProvider(
+            LazyGetService<Microsoft.Extensions.Hosting.IHostApplicationLifetime> lazyLifetime,
+            IOptionsMonitor<LocalFileLoggerOptions> options
+            ) : this(options) {
+            this._lazyLifetime = lazyLifetime;
+        }
+
+        partial void StartHostApplicationLifetime() {
+            if ((!this._lifetimeRegistered)
+                && (this._lazyLifetime?.GetService() is { } lifetime)) {
+                this._flushRegistered = lifetime.ApplicationStopping.Register(() => this.Flush());
+                this._disposeRegistered = lifetime.ApplicationStopped.Register(() => this.Dispose());
+                this._lifetimeRegistered = true;
+            }
+        }
+
+        partial void DisposeHostApplicationLifetime() {
+            if (this._lifetimeRegistered) {
+                using (this._flushRegistered) {
+                    using (this._disposeRegistered) {
+                        this._lifetimeRegistered = false;
+                        this._flushRegistered = default;
+                        this._disposeRegistered = default;
+                    }
+                }
+            }
+        }
+
+    }
+#endif
+}
+
+namespace Brimborium.Extensions.Logging.LocalFile {
+    /// <summary>
+    /// Internal Logger - if inner failed.
+    /// </summary>
+    public class InternalLogger {
+        private static InternalLogger? _Instance;
+
+        /// <summary>
+        /// Singleton
+        /// </summary>
+        public static InternalLogger GetInstance()
+            => _Instance ??= new InternalLogger();
+
+        private InternalLogger() { }
+
+        /// <summary>
+        /// System.Console.Error.WriteLine
+        /// </summary>
+        /// <param name="error">the thrown exception.</param>
+        public void Fail(System.Exception error) {
+            if (this.OnFail is { } onFail) {
+                try {
+                    onFail(error);
+                } catch {
+                }
+            } else {
+                if (error is System.AggregateException aggregateException) {
+                    aggregateException.Handle(static (error) => true);
+                    System.Console.Error.WriteLine(aggregateException.ToString());
+                } else {
+                    System.Console.Error.WriteLine(error.ToString());
+                }
+            }
+        }
+
+        /// <summary>
+        /// Called by <see cref="Fail(System.Exception)"/>
+        /// </summary>
+        public System.Action<System.Exception>? OnFail { get; set; }
+    }
+}
+
+namespace Brimborium.Extensions.Logging.LocalFile {
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    internal readonly struct LogMessage {
+        public LogMessage(System.DateTimeOffset timestamp, string message) {
+            this.Timestamp = timestamp;
+            this.Message = message;
+        }
+
+        public System.DateTimeOffset Timestamp { get; }
+        public string Message { get; }
+    }
+}
+
+namespace Brimborium.Extensions.Logging.LocalFile {
+    internal sealed class NullScope : System.IDisposable {
+        internal static NullScope Instance { get; } = new NullScope();
+
+        private NullScope() {}
+
+        public void Dispose() {}
+    }
+}
+namespace System.Text.Json {
+    using global::System;
+    using global::System.Buffers;
+    using global::System.Diagnostics;
+    using global::System.Diagnostics.CodeAnalysis;
+    using global::System.IO;
+    using global::System.Runtime.CompilerServices;
+    using global::System.Threading;
+    using global::System.Threading.Tasks;
 
     internal sealed class PooledByteBufferWriter : IBufferWriter<byte>, IDisposable {
         // This class allows two possible configurations: if rentedBuffer is not null then
@@ -841,127 +1168,125 @@ namespace Brimborium.Extensions.Logging.LocalFile {
         public PooledByteBufferWriter(int initialCapacity) {
             Debug.Assert(initialCapacity > 0);
 
-            _rentedBuffer = ArrayPool<byte>.Shared.Rent(initialCapacity);
-            _index = 0;
+            this._rentedBuffer = ArrayPool<byte>.Shared.Rent(initialCapacity);
+            this._index = 0;
         }
 
         public ReadOnlyMemory<byte> WrittenMemory {
             get {
-                if (_rentedBuffer == null) {
+                if (this._rentedBuffer == null) {
                     return (new byte[0]).AsMemory();
                 } else {
                     // Debug.Assert(_rentedBuffer != null);
-                    Debug.Assert(_index <= _rentedBuffer.Length);
-                    return _rentedBuffer.AsMemory(0, _index);
+                    Debug.Assert(this._index <= this._rentedBuffer.Length);
+                    return this._rentedBuffer.AsMemory(0, this._index);
                 }
             }
         }
 
         public int WrittenCount {
             get {
-                if (_rentedBuffer is null) {
+                if (this._rentedBuffer is null) {
                     return 0;
                 } else {
-                    Debug.Assert(_rentedBuffer != null);
-                    return _index;
+                    Debug.Assert(this._rentedBuffer != null);
+                    return this._index;
                 }
             }
         }
 
         public int Capacity {
             get {
-                if (_rentedBuffer is null) {
+                if (this._rentedBuffer is null) {
                     return 0;
                 } else {
                     //Debug.Assert(_rentedBuffer != null);
-                    return _rentedBuffer.Length;
+                    return this._rentedBuffer.Length;
                 }
             }
         }
 
         public int FreeCapacity {
             get {
-                if (_rentedBuffer is null) {
+                if (this._rentedBuffer is null) {
                     return 0;
                 } else {
                     //Debug.Assert(_rentedBuffer != null);
-                    return _rentedBuffer.Length - _index;
+                    return this._rentedBuffer.Length - this._index;
                 }
             }
         }
 
         public void Clear() {
-            ClearHelper();
+            this.ClearHelper();
         }
 
         public void ClearAndReturnBuffers() {
-            Debug.Assert(_rentedBuffer != null);
+            Debug.Assert(this._rentedBuffer != null);
 
-            ClearHelper();
-            var toReturn = _rentedBuffer;
-            _rentedBuffer = null;
+            this.ClearHelper();
+            var toReturn = this._rentedBuffer;
+            this._rentedBuffer = null;
             ArrayPool<byte>.Shared.Return(toReturn);
         }
 
         private void ClearHelper() {
-            if (_rentedBuffer is null) {
+            if (this._rentedBuffer is null) {
                 //
             } else {
                 // Debug.Assert(_rentedBuffer != null);
-                Debug.Assert(_index <= _rentedBuffer.Length);
+                Debug.Assert(this._index <= this._rentedBuffer.Length);
 
-                _rentedBuffer.AsSpan(0, _index).Clear();
+                this._rentedBuffer.AsSpan(0, this._index).Clear();
             }
-            _index = 0;
+            this._index = 0;
         }
 
         // Returns the rented buffer back to the pool
         public void Dispose() {
-            if (_rentedBuffer == null) {
-                return;
-            }
+            if (this._rentedBuffer == null) { return; }
 
-            ClearHelper();
-            var toReturn = _rentedBuffer;
-            _rentedBuffer = null;
+            this.ClearHelper();
+            var toReturn = this._rentedBuffer;
+            this._rentedBuffer = null;
             ArrayPool<byte>.Shared.Return(toReturn);
         }
 
         public void InitializeEmptyInstance(int initialCapacity) {
             Debug.Assert(initialCapacity > 0);
-            Debug.Assert(_rentedBuffer is null);
+            Debug.Assert(this._rentedBuffer is null);
 
-            _rentedBuffer = ArrayPool<byte>.Shared.Rent(initialCapacity);
-            _index = 0;
+            this._rentedBuffer = ArrayPool<byte>.Shared.Rent(initialCapacity);
+            this._index = 0;
         }
 
         public static PooledByteBufferWriter CreateEmptyInstanceForCaching() => new PooledByteBufferWriter();
 
         public void Advance(int count) {
-            Debug.Assert(_rentedBuffer != null);
+            Debug.Assert(this._rentedBuffer != null);
             Debug.Assert(count >= 0);
-            Debug.Assert(_index <= _rentedBuffer.Length - count);
+            Debug.Assert((this._rentedBuffer != null) && (this._index <= this._rentedBuffer.Length - count));
 
-            _index += count;
+            this._index += count;
         }
 
         public Memory<byte> GetMemory(int sizeHint = 0) {
-            CheckAndResizeBuffer(sizeHint);
-            return _rentedBuffer.AsMemory(_index);
+            this.CheckAndResizeBuffer(sizeHint);
+            return this._rentedBuffer.AsMemory(this._index);
         }
 
         public Span<byte> GetSpan(int sizeHint = 0) {
-            CheckAndResizeBuffer(sizeHint);
-            return _rentedBuffer.AsSpan(_index);
+            this.CheckAndResizeBuffer(sizeHint);
+            return this._rentedBuffer.AsSpan(this._index);
         }
 
 #if NET8_0_OR_GREATER
         internal ValueTask WriteToStreamAsync(Stream destination, CancellationToken cancellationToken) {
-            return destination.WriteAsync(WrittenMemory, cancellationToken);
+            return destination.WriteAsync(this.WrittenMemory, cancellationToken);
         }
 
         internal void WriteToStream(Stream destination) {
-            destination.Write(WrittenMemory.Span);
+            destination.Write(this.WrittenMemory.Span);
         }
 #else
         internal Task WriteToStreamAsync(Stream destination, CancellationToken cancellationToken) {
@@ -976,20 +1301,21 @@ namespace Brimborium.Extensions.Logging.LocalFile {
 #endif
 
         private void CheckAndResizeBuffer(int sizeHint) {
-            if (_rentedBuffer is null) {
-                _rentedBuffer = new byte[sizeHint];
-            }
-            //Debug.Assert(_rentedBuffer != null);
             Debug.Assert(sizeHint >= 0);
 
             if (sizeHint == 0) {
                 sizeHint = MinimumBufferSize;
             }
 
-            var availableSpace = _rentedBuffer.Length - _index;
+            if (this._rentedBuffer is null) {
+                this._rentedBuffer = new byte[sizeHint];
+            }
+            //Debug.Assert(_rentedBuffer != null);
+
+            var availableSpace = this._rentedBuffer.Length - this._index;
 
             if (sizeHint > availableSpace) {
-                var currentLength = _rentedBuffer.Length;
+                var currentLength = this._rentedBuffer.Length;
                 var growBy = Math.Max(sizeHint, currentLength);
 
                 var newSize = currentLength + growBy;
@@ -1001,23 +1327,24 @@ namespace Brimborium.Extensions.Logging.LocalFile {
                     }
                 }
 
-                var oldBuffer = _rentedBuffer;
+                var oldBuffer = this._rentedBuffer;
 
-                _rentedBuffer = ArrayPool<byte>.Shared.Rent(newSize);
+                this._rentedBuffer = ArrayPool<byte>.Shared.Rent(newSize);
 
-                Debug.Assert(oldBuffer.Length >= _index);
-                Debug.Assert(_rentedBuffer.Length >= _index);
+                Debug.Assert(oldBuffer.Length >= this._index);
+                Debug.Assert(this._rentedBuffer.Length >= this._index);
 
-                var previousBuffer = oldBuffer.AsSpan(0, _index);
-                previousBuffer.CopyTo(_rentedBuffer);
+                var previousBuffer = oldBuffer.AsSpan(0, this._index);
+                previousBuffer.CopyTo(this._rentedBuffer);
                 previousBuffer.Clear();
                 ArrayPool<byte>.Shared.Return(oldBuffer);
             }
 
-            Debug.Assert(_rentedBuffer.Length - _index > 0);
-            Debug.Assert(_rentedBuffer.Length - _index >= sizeHint);
+            Debug.Assert(this._rentedBuffer.Length - this._index > 0);
+            Debug.Assert(this._rentedBuffer.Length - this._index >= sizeHint);
         }
     }
+
 
     internal static partial class ThrowHelper {
         [DoesNotReturn]

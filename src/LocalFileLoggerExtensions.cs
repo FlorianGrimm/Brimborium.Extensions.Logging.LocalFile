@@ -1,5 +1,6 @@
+// Enable
 // #define LocalFileIHostApplicationLifetime
-
+// if you using Microsoft.Extensions.Hosting
 namespace Microsoft.Extensions.Logging {
     using Brimborium.Extensions.Logging.LocalFile;
 
@@ -37,38 +38,12 @@ namespace Microsoft.Extensions.Logging {
                 optionsBuilder.Configure(configure);
             }
 
-            //if (configuration is { }) {
-            //    services.Add(ServiceDescriptor.Singleton<IOptionsChangeTokenSource<LocalFileLoggerOptions>>(
-            //        new ConfigurationChangeTokenSource<LocalFileLoggerOptions>(configuration)));
-            //}
             LoggerProviderOptions.RegisterProviderOptions<LocalFileLoggerOptions, LocalFileLoggerProvider>(builder.Services);
+
+            builder.Services.AddLazyGetService();
 
             return builder;
         }
-
-        /*
-        public static ILoggingBuilder AddLocalFileLogger(
-           this ILoggingBuilder builder,
-           IConfiguration configuration,
-           Microsoft.Extensions.Hosting.IHostEnvironment hostEnvironment
-           ) {
-            builder.Services.AddSingleton<LocalFileLoggerProvider>();
-            builder.Services
-                .AddSingleton<IConfigureOptions<LocalFileLoggerOptions>>(
-                    new LocalFileLoggerConfigureOptions(
-                        configuration: configuration.GetSection("Logging:LocalFile"),
-                        hostEnvironment: hostEnvironment
-                        ))
-                .AddSingleton<IOptionsChangeTokenSource<LocalFileLoggerOptions>>(
-                    implementationInstance: new ConfigurationChangeTokenSource<LocalFileLoggerOptions>(configuration))
-                //.TryAddEnumerable(ServiceDescriptor.Singleton<ILoggerProvider, LocalFileLoggerProvider>())
-                .AddSingleton<ILoggerProvider>((sp) => sp.GetRequiredService<LocalFileLoggerProvider>());
-            ;
-            LoggerProviderOptions.RegisterProviderOptions<LocalFileLoggerOptions, LocalFileLoggerProvider>(builder.Services);
-
-            return builder;
-        }
-        */
 
         /// <summary>
         /// Ensures the logs are written to disk.

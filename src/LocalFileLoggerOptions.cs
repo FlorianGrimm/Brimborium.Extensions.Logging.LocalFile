@@ -7,7 +7,7 @@
     /// </summary>
     public sealed class LocalFileLoggerOptions {
         private int? _batchSize = null;
-        private int? _backgroundQueueSize; // = 1000;
+        private int? _backgroundQueueSize = 1000;
         private TimeSpan _flushPeriod = TimeSpan.FromSeconds(1);
         private int? _fileSizeLimit = 10 * 1024 * 1024;
         private int? _retainedFileCountLimit = 31;
@@ -82,7 +82,7 @@
 
         /// <summary>
         /// Gets or sets a maximum number of events to include in a single batch or null for no limit.
-        /// Defaults to <c>null</c>.
+        /// Defaults to 1000.
         /// </summary>
         public int? BatchSize {
             get => this._batchSize;
