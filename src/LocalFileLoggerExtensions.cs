@@ -10,11 +10,17 @@ namespace Microsoft.Extensions.Logging {
     using Microsoft.Extensions.Options;
 
     using System;
+    using System.Diagnostics.CodeAnalysis;
 
     /// <summary>
     /// Extension methods for adding Azure diagnostics logger.
     /// </summary>
     public static class LocalFileLoggerExtensions {
+        internal const string RequiresDynamicCodeMessage = "Binding TOptions to configuration values may require generating dynamic code at runtime.";
+        internal const string TrimmingRequiresUnreferencedCodeMessage = "TOptions's dependent types may have their members trimmed. Ensure all required members are preserved.";
+
+        [RequiresDynamicCode(RequiresDynamicCodeMessage)]
+        [RequiresUnreferencedCode(TrimmingRequiresUnreferencedCodeMessage)]
         public static ILoggingBuilder AddLocalFile(
             this ILoggingBuilder builder,
             IConfiguration? configuration = null,

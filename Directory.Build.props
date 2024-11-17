@@ -2,5 +2,6 @@
     <PropertyGroup>
 		<Authors>Florian Grimm</Authors>
 		<Copyright>MIT</Copyright>
+        <Version>1.0.1</Version>
     </PropertyGroup>
 </Project>

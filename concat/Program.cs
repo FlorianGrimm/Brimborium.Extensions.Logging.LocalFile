@@ -12,6 +12,7 @@ internal class Program {
             "LocalFileLoggerConfigureOptions.cs",
             "LocalFileLogger.cs",
             "LocalFileLoggerProvider.cs",
+            "LazyResolveService.cs",
             "InternalLogger.cs",
             "LogMessage.cs",
             "NullScope.cs",
