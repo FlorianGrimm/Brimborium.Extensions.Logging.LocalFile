@@ -23,13 +23,6 @@ namespace Microsoft.Extensions.Logging {
             var services = builder.Services;
             var optionsBuilder = services.AddOptions<LocalFileLoggerOptions>();
             services.Add(ServiceDescriptor.Singleton<LocalFileLoggerProvider, LocalFileLoggerProvider>());
-            /*
-            services.Add(ServiceDescriptor.Singleton<LocalFileLoggerProvider>(
-                static (IServiceProvider services) => {
-                    var options = services.GetRequiredService<IOptions<LocalFileLoggerOptions>>();
-                    return new LocalFileLoggerProvider(options);
-                }));
-            */
             services.Add(ServiceDescriptor.Singleton<ILoggerProvider>(
                 static (IServiceProvider services) => {
                     return services.GetRequiredService<LocalFileLoggerProvider>();
@@ -43,6 +36,7 @@ namespace Microsoft.Extensions.Logging {
             if (configure is { }) {
                 optionsBuilder.Configure(configure);
             }
+
             //if (configuration is { }) {
             //    services.Add(ServiceDescriptor.Singleton<IOptionsChangeTokenSource<LocalFileLoggerOptions>>(
             //        new ConfigurationChangeTokenSource<LocalFileLoggerOptions>(configuration)));

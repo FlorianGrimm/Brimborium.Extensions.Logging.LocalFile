@@ -59,29 +59,28 @@
                 options.UseJSONFormat = TextToBoolean(configurationSection.GetSection("UseJSONFormat")?.Value);
 
 
+                var baseDirectory = configurationSection.GetSection("BaseDirectory")?.Value ?? options.BaseDirectory;
+                if (baseDirectory is { Length: > 0 } && baseDirectory.Contains('%')) {
+                    baseDirectory = System.Environment.ExpandEnvironmentVariables(baseDirectory);
+                    options.BaseDirectory = baseDirectory;
+                }
 
                 var logDirectory = configurationSection.GetSection("Directory")?.Value ?? options.LogDirectory;
-                //if (string.IsNullOrEmpty(logDirectory)) {
-                //    logDirectory = Path.Combine(_HostEnvironment.ContentRootPath ?? ".", "LogFiles");
-                //}
-                //if (string.IsNullOrEmpty(logDirectory)) {
-                //    logDirectory = System.Environment.GetEnvironmentVariable("TEMP");
-                //}
-                if (logDirectory is { Length: > 0 } && logDirectory.Contains("%")) {
+                if (logDirectory is { Length: > 0 } && logDirectory.Contains('%')) {
                     logDirectory = System.Environment.ExpandEnvironmentVariables(logDirectory);
+                    options.LogDirectory = logDirectory;
                 }
-                if (logDirectory is { Length: > 0 } && !System.IO.Path.IsPathRooted(logDirectory)) {
-                    string? baseDirectory = default;
-                    if (options.BaseDirectory is { Length: > 0 }) { baseDirectory = options.BaseDirectory; }
-                    if (string.IsNullOrEmpty(baseDirectory)) { options.BaseDirectory = baseDirectory = System.AppContext.BaseDirectory; }
-                    logDirectory = System.IO.Path.Combine(baseDirectory, logDirectory);
+            }
+            {
+                var baseDirectory = options.BaseDirectory;
+                var logDirectory = options.LogDirectory;
+                if (logDirectory is { Length: > 0 }
+                    && System.IO.Path.IsPathRooted(logDirectory)) {
+                    options.IsEnabled = true;
+                } else if (baseDirectory is { Length: > 0 }
+                    && logDirectory is { Length: > 0 }) {
+                    options.IsEnabled = System.IO.Path.IsPathRooted(System.IO.Path.Combine(baseDirectory, logDirectory));
                 }
-                if (logDirectory is { Length: > 0 } && !System.IO.Path.IsPathRooted(logDirectory)) {
-                    logDirectory = System.IO.Path.GetFullPath(logDirectory);
-                }
-                options.LogDirectory = logDirectory;
-            } else {
-                options.IsEnabled = false;
             }
         }
 

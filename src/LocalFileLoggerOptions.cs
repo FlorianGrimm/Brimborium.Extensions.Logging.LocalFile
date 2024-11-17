@@ -9,14 +9,14 @@
         private int? _batchSize = null;
         private int? _backgroundQueueSize; // = 1000;
         private TimeSpan _flushPeriod = TimeSpan.FromSeconds(1);
-        private int? _fileSizeLimit = null; // 10 * 1024 * 1024;
+        private int? _fileSizeLimit = 10 * 1024 * 1024;
         private int? _retainedFileCountLimit = 31;
         private string _fileName = "diagnostics-";
 
         /// <summary>
         /// Gets or sets a strictly positive value representing the maximum log size in bytes or null for no limit.
         /// Once the log is full, no more messages will be appended.
-        /// Defaults is no limit.
+        /// Defaults is 10 MB.
         /// </summary>
         public int? FileSizeLimit {
             get => this._fileSizeLimit;
@@ -50,14 +50,15 @@
 
         /// <summary>
         /// Gets or sets the base directory where log files will be stored.
+        /// Needed to enable the logging - if LogDirectory is relative
         /// </summary>
         public string? BaseDirectory { get; set; }
 
         /// <summary>
         /// Gets or sets the directory where log files will be stored.
-        /// Defaults to <c>LogFiles/Application</c>.
+        /// Needed to enable the logging - if LogDirectory is relative than BaseDirectory is also needed.
         /// </summary>
-        public string? LogDirectory { get; set; } = "LogFiles/Application";
+        public string? LogDirectory { get; set; }
 
         /// <summary>
         /// Gets or sets the period after which logs will be flushed to the store.

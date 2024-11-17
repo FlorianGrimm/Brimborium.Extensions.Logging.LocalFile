@@ -2,7 +2,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Configuration;
 
-namespace ConsoleAppCore;
+namespace Sample;
 
 internal class Program {
     private static void Main(string[] args) {
@@ -19,7 +19,7 @@ internal class Program {
             })
             .BuildServiceProvider();
         serviceProvider.GetRequiredService<Program>().Run(args);
-        serviceProvider.GetRequiredService<Brimborium.Extensions.Logging.LocalFile.LocalFileLoggerProvider>().Flush();
+        serviceProvider.FlushLocalFile();
     }
 
     private readonly ILogger<Program> _logger;
