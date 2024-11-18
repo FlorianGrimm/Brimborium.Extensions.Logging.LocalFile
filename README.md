@@ -4,9 +4,12 @@ Microsoft.Extensions.Logging Logger to local file for .Net Core/.Net Framework
 
 Typically you need to call AddLocalFile and specify in the options the BaseDirectory and the LogDirectory in the source or in the configuration (e.g. appsettings.json, environment)
 
+It respects the normal namespace - log level configuration.
+
 The logger will write the logs after a short time (FlushPeriod).
 
 The logger do this in a loop writing, waiting, repeat.
+
 If there are more logs than allows than they are dropped.
 
 After some iterations of no logs written the loop will go to sleep until the next log is added. This is use full for a application that sleep sometime - so no CPU time is needed for waiting for nothing.
@@ -52,7 +55,9 @@ internal class Program {
     "LocalFile": {
       "LogLevel": {
         "Sample": "Debug"
-      }
+      },
+      "IncludeScopes": false,
+      "UseUtcTimestamp": false
     }
   }
 }
@@ -61,11 +66,17 @@ internal class Program {
 
 # Using by copy of the source
 
-The files src\*.cs are concatenated to singlefile\LocalFileLogger.cs.
+The files <code>src\\*.cs</code> are concatenated to <code>singlefile\\LocalFileLogger.cs</code>.
 
-To ensure the last logs are written, you have two options.
+Use a copy of one of them.
 
-a) If you using Microsoft.Extensions.Hosting (or Sdk="Microsoft.NET.Sdk.Web") please define LocalFileIHostApplicationLifetime
+To ensure the logs are written you have to flush the buffer via
+```c#
+serviceProvider.FlushLocalFile();
+```
+
+**BUT** if you are using Microsoft.Extensions.Hosting (or Sdk="Microsoft.NET.Sdk.Web") 
+you can benefit of the usage of IHostApplicationLifetime - by defining LocalFileIHostApplicationLifetime.
  
 1) for the bunch of files.
 ```csproj
@@ -75,14 +86,11 @@ a) If you using Microsoft.Extensions.Hosting (or Sdk="Microsoft.NET.Sdk.Web") pl
 ```
 
 2) for the single file
+
+at the top
+
 ```c#
 #define LocalFileIHostApplicationLifetime
-```
-
-a) If you use not the Hosting library
-use at the very end.
-```c#
-serviceProvider.FlushLocalFile();
 ```
 
 ## LocalFileLoggerOptions
@@ -157,3 +165,12 @@ The `LocalFileLoggerOptions` class provides various configuration options for lo
 
 - **JsonWriterOptions** (`JsonWriterOptions`): 
   - Description: Options for the JSON writer.
+
+
+## Helper: LazyGetService and LazyGetRequiredService
+
+These classes give you the possibility to resolve a service later - to break circles in the DI.
+
+LocalFileLoggerProvider is created while creating the app and IHostApplicationLifetime.
+You cannot have a dependency to IHostApplicationLifetime in the LocalFileLoggerProvider.
+
