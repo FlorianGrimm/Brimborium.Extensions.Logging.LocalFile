@@ -1,6 +1,6 @@
-// Enable
+// Use if you using Microsoft.Extensions.Hosting
 // #define LocalFileIHostApplicationLifetime
-// if you using Microsoft.Extensions.Hosting
+
 namespace Microsoft.Extensions.Logging {
     using Brimborium.Extensions.Logging.LocalFile;
 
@@ -15,6 +15,13 @@ namespace Microsoft.Extensions.Logging {
     /// Extension methods for adding Azure diagnostics logger.
     /// </summary>
     public static class LocalFileLoggerExtensions {
+        /// <summary>
+        /// Add the local file logger
+        /// </summary>
+        /// <param name="builder"></param>
+        /// <param name="configuration"></param>
+        /// <param name="configure"></param>
+        /// <returns></returns>
         public static ILoggingBuilder AddLocalFile(
             this ILoggingBuilder builder,
             IConfiguration? configuration = null,
@@ -695,7 +702,7 @@ namespace Brimborium.Extensions.Logging.LocalFile {
         public string? TimestampFormat { get; set; }
 
         /// <summary>
-        /// Gets or sets indication whether or not UTC timezone should be used to format timestamps in logging messages. Defaults to <c>false</c>.
+        /// Gets or sets indication whether or not UTC time zone should be used to format timestamps in logging messages. Defaults to <c>false</c>.
         /// </summary>
         public bool UseUtcTimestamp { get; set; }
 

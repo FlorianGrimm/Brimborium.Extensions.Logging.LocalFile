@@ -3,7 +3,11 @@ internal class Program {
         var builder = WebApplication.CreateBuilder(args);
 
         // Add services to the container.
-        builder.Logging.AddLocalFile();
+        builder.Logging.AddLocalFile(
+                configure: (options) => {
+                    options.BaseDirectory = System.AppContext.BaseDirectory;
+                    options.LogDirectory = "LogFiles";
+                });
 
         builder.Services.AddControllers();
 

@@ -121,7 +121,7 @@ namespace Brimborium.Extensions.Logging.LocalFile {
         public string? TimestampFormat { get; set; }
 
         /// <summary>
-        /// Gets or sets indication whether or not UTC timezone should be used to format timestamps in logging messages. Defaults to <c>false</c>.
+        /// Gets or sets indication whether or not UTC time zone should be used to format timestamps in logging messages. Defaults to <c>false</c>.
         /// </summary>
         public bool UseUtcTimestamp { get; set; }
 

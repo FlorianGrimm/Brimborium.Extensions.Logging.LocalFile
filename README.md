@@ -2,10 +2,20 @@
 
 Microsoft.Extensions.Logging Logger to local file for .Net Core/.Net Framework
 
+Typically you need to call AddLocalFile and specify in the options the BaseDirectory and the LogDirectory in the source or in the configuration (e.g. appsettings.json, environment)
+
 The logger will write the logs after a short time (FlushPeriod).
 
-The logger do this in a loop writing, waiting repeat.
-After 10 loop of no logs the loop will goto sleep until the next log is added. This is usefull for a application that sleep sometime - so no CPU time is needed.
+The logger do this in a loop writing, waiting, repeat.
+If there are more logs than allows than they are dropped.
+
+After some iterations of no logs written the loop will go to sleep until the next log is added. This is use full for a application that sleep sometime - so no CPU time is needed for waiting for nothing.
+
+# License
+
+MIT
+
+The project is heavily copying Microsoft.Extensions.Logging.AzureAppServices and removing things ... and modify - so all issues are my fault.
 
 # Sample
 
@@ -35,6 +45,7 @@ internal class Program {
 ```
 
 - appsettings.json
+
 ```JSON
 {
   "Logging": {
@@ -48,25 +59,31 @@ internal class Program {
 ```
 
 
-# Using by copy the source
+# Using by copy of the source
 
-To ensure the last logs are written
+The files src\*.cs are concatenated to singlefile\LocalFileLogger.cs.
 
-If you using Microsoft.Extensions.Hosting please enable
+To ensure the last logs are written, you have two options.
+
+a) If you using Microsoft.Extensions.Hosting (or Sdk="Microsoft.NET.Sdk.Web") please define LocalFileIHostApplicationLifetime
+ 
+1) for the bunch of files.
+```csproj
+     <PropertyGroup>
+      <DefineConstants>$(DefineConstants);LocalFileIHostApplicationLifetime</DefineConstants>
+    </PropertyGroup>
+```
+
+2) for the single file
 ```c#
 #define LocalFileIHostApplicationLifetime
 ```
 
-**or**
-
-If you use not the Hosting
+a) If you use not the Hosting library
 use at the very end.
 ```c#
 serviceProvider.FlushLocalFile();
 ```
-
-## nuget 
-Not yet
 
 ## LocalFileLoggerOptions
 
