@@ -58,8 +58,9 @@
                 options.IncludeEventId = TextToBoolean(configurationSection.GetSection("IncludeEventId")?.Value);
                 options.UseJSONFormat = TextToBoolean(configurationSection.GetSection("UseJSONFormat")?.Value);
 
-
-                var baseDirectory = configurationSection.GetSection("BaseDirectory")?.Value ?? options.BaseDirectory;
+                string? baseDirectory = configurationSection.GetSection("BaseDirectory").Value;
+                if (string.IsNullOrEmpty(baseDirectory)) { baseDirectory = options.BaseDirectory; }
+                
                 if (baseDirectory is { Length: > 0 }
 #if NET8_0_OR_GREATER
                     && baseDirectory.Contains('%')
@@ -71,7 +72,11 @@
                     options.BaseDirectory = baseDirectory;
                 }
 
-                var logDirectory = configurationSection.GetSection("Directory")?.Value ?? options.LogDirectory;
+
+                string? logDirectory = configurationSection.GetSection("Directory").Value;
+                if (string.IsNullOrEmpty(logDirectory)) { logDirectory = configurationSection.GetSection("LogDirectory").Value; }
+                if (string.IsNullOrEmpty(logDirectory)) { logDirectory = options.LogDirectory; }
+
                 if (logDirectory is { Length: > 0 }
 #if NET8_0_OR_GREATER
                     && logDirectory.Contains('%')
@@ -80,8 +85,8 @@
 #endif
                     ) {
                     logDirectory = System.Environment.ExpandEnvironmentVariables(logDirectory);
-                    options.LogDirectory = logDirectory;
                 }
+                options.LogDirectory = logDirectory;
             }
             {
                 var baseDirectory = options.BaseDirectory;
@@ -91,7 +96,10 @@
                     options.IsEnabled = true;
                 } else if (baseDirectory is { Length: > 0 }
                     && logDirectory is { Length: > 0 }) {
-                    options.IsEnabled = System.IO.Path.IsPathRooted(System.IO.Path.Combine(baseDirectory, logDirectory));
+                    var fullDirectory = System.IO.Path.Combine(baseDirectory, logDirectory);
+                    options.IsEnabled = System.IO.Path.IsPathRooted(fullDirectory);
+                    options.LogDirectory = fullDirectory;
+
                 }
             }
         }

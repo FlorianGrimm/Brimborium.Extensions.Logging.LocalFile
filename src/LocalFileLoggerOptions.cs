@@ -55,6 +55,7 @@
         public string? BaseDirectory { get; set; }
 
         /// <summary>
+        /// 'Directory' in settings
         /// Gets or sets the directory where log files will be stored.
         /// Needed to enable the logging - if LogDirectory is relative than BaseDirectory is also needed.
         /// </summary>

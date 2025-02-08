@@ -1,4 +1,5 @@
-﻿#pragma warning disable IDE0079 // Remove unnecessary suppression
+﻿#pragma warning disable IDE0058 // Expression value is never used
+#pragma warning disable IDE0079 // Remove unnecessary suppression
 
 namespace Brimborium.Extensions.Logging.LocalFile {
     using global::Microsoft.Extensions.Logging;
@@ -22,6 +23,8 @@ namespace Brimborium.Extensions.Logging.LocalFile {
         : ILoggerProvider, ISupportExternalScope {
         // values from the options
         private readonly string? _path;
+        private DateTime _nextCheckPath;
+        private DateTime _nextCheckRollFiles;
         private readonly bool _isPathValid;
         private readonly string _fileName;
         private readonly int? _maxFileSize;
@@ -81,6 +84,9 @@ namespace Brimborium.Extensions.Logging.LocalFile {
                         this._isPathValid = true;
                     }
                 }
+
+                this._nextCheckPath = DateTime.MinValue;
+                this._nextCheckRollFiles = DateTime.MinValue;
 
                 this._fileName = loggerOptions.FileName;
                 this._maxFileSize = loggerOptions.FileSizeLimit;
@@ -346,9 +352,14 @@ namespace Brimborium.Extensions.Logging.LocalFile {
                 return;
             }
 
+            var utcNow = DateTime.UtcNow;
             try {
-                Directory.CreateDirectory(this._path);
-            } catch {
+                if (this._nextCheckPath < utcNow) { 
+                    this._nextCheckPath = utcNow.AddHours(1);
+                    Directory.CreateDirectory(this._path);
+                }
+            } catch (System.Exception error) {
+                System.Console.Error.WriteLine(error.ToString());
                 return;
             }
 
@@ -372,10 +383,21 @@ namespace Brimborium.Extensions.Logging.LocalFile {
                     }
                 } catch (System.Exception error) {
                     System.Console.Error.WriteLine(error.ToString());
+
+                    // folder deleted? disk full?
+                    this._nextCheckPath = DateTime.MinValue;
+                    this._nextCheckRollFiles = DateTime.MinValue;
                 }
             }
 
-            this.RollFiles();
+            try {
+                if (this._nextCheckRollFiles < utcNow) {
+                    this._nextCheckRollFiles = utcNow.AddHours(1);
+                    this.RollFiles();
+                }
+            } catch (System.Exception error) {
+                System.Console.Error.WriteLine(error.ToString());
+            }
         }
 
         private string GetFullName((int Year, int Month, int Day) group) {
